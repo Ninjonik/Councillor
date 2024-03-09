@@ -1,3 +1,2 @@
-# WWCBot
-Discord bot for the World War Community.
-CURRENTLY DISCOUNTINUED
+# Councillor
+A Councillor Discord bot which handles all democratic processes within your discord server.

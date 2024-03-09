@@ -17,7 +17,6 @@ import string
 from pprint import pprint
 import config
 from PIL import Image, ImageDraw, ImageFont
-import mysql.connector
 import time
 from googleapiclient import discovery
 

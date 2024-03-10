@@ -3,6 +3,7 @@ from time import sleep
 
 import discord
 import discord.utils
+from appwrite.query import Query
 from discord.ext import tasks, commands
 from discord import app_commands
 from colorama import Back, Fore, Style
@@ -64,35 +65,101 @@ async def _add_player(player_id, rating_percentage, current_time):
         raise e
 
 
-class AssemblyDialog(discord.ui.View):
+class CouncilDialog(discord.ui.View):
     def __init__(self, client):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="Become MP!", style=discord.ButtonStyle.blurple,
                        custom_id="co_council_member", emoji="📋")
-    async def assembly_member(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # self.cursor.execute("SELECT discord_id FROM assemblies WHERE discord_id='%s'" % interaction.user.id)
-        # assembly = self.cursor.fetchall()
-        assembly = []
-        current_time = datetime.datetime.now()
-        if not assembly:
-            print(f"{prefix()} User was not in DB - {interaction.user.name}")
-            # self.cursor.execute("INSERT INTO assemblies (discord_id, created_at, updated_at) "
-            #                     "VALUES (%s, '%s', '%s')"
-            #                     % (interaction.user.id, current_time, current_time))
-            # self.connection.commit()
-            await interaction.user.add_roles(
-                discord.utils.get(interaction.user.guild.roles, name="Assembly Member"))
+    async def councillor(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        member = interaction.user
+        councillor_role = config.ROLE_COUNCILLOR_ID
+
+        joined_at = member.joined_at
+        current_time_utc = datetime.datetime.now(datetime.timezone.utc)
+        joined_at_days = (current_time_utc - joined_at).days
+
+        if joined_at_days < 180:
+            await interaction.response.send_message("❌ Unfortunately you can't become MP yet. "
+                                                    "You have to be in the server for at least 6 months.")
+            return
+
+        role_id = config.ROLE_REQUIREMENT_ID
+
+        if role_id:
+            role = interaction.guild.get_role(role_id)
+            if role not in member.roles:
+                await interaction.response.send_message("❌ Unfortunately you can't become MP yet. "
+                                                        f"You have obtain the {role.name} role first.")
+                return
+
+        councillor_data = databases.list_documents(
+            database_id=config.APPWRITE_DB_NAME,
+            collection_id='councillors',
+            queries=[
+                Query.equal('$id', interaction.user.id)
+            ]
+        )
+
+        if councillor_data.documents.length == 0:
+            print(f"{prefix()} New raw councillor in {interaction.guild.name} - {interaction.user.name}")
+
+            res = databases.create_document(
+                database_id=config.APPWRITE_DB_NAME,
+                collection_id='councillors',
+                document_id=f'{str(interaction.user.id)}',
+                data={
+                    'discord_id': str(interaction.guild.id),
+                    'name': str(interaction.guild.name),
+                    'councils': [
+                        f"{str(interaction.guild.id)}_c"
+                    ]
+                }
+            )
+
+            await interaction.user.add_roles(interaction.guild.get_role(config.ROLE_COUNCILLOR_ID))
+            await interaction.response.send_message("✔️ You have successfully joined this server's council! Good luck!")
         else:
-            print(f"{prefix()} Removing User from Assembly - {interaction.user.name}")
-            # self.cursor.execute("DELETE FROM assembly_suggestions WHERE author_discord_id=%s"
-            #                     % interaction.user.id)
-            # self.cursor.execute("DELETE FROM assemblies WHERE discord_id=%s"
-            #                     % interaction.user.id)
-            # self.connection.commit()
-            await interaction.user.remove_roles(
-                discord.utils.get(interaction.user.guild.roles, name="Assembly Member"))
-        await interaction.response.send_message("Your roles have been updated.", ephemeral=True)
+            for council in councillor_data.documents[0].councils:
+                if council['$id'] == interaction.guild.id:
+                    print(f"{prefix()} New councillor in {interaction.guild.name} - {interaction.user.name}")
+
+                    res = databases.update_document(
+                        database_id=config.APPWRITE_DB_NAME,
+                        collection_id='councillors',
+                        document_id=f'{str(interaction.user.id)}',
+                        data={
+                            'councils': [
+                                *councillor_data.documents[0].councils,
+                                f"{str(interaction.guild.id)}_c"
+                            ]
+                        }
+                    )
+
+                    await interaction.response.send_message(
+                        "✔️ You have successfully joined this server's council! Good luck!")
+                    break
+                else:
+                    print(
+                        f"{prefix()} Councillor left {interaction.guild.name}'s Council - {interaction.user.name}")
+                    updated_councils = [council for council in councillor_data.documents[0].councils if
+                                        council['$id'] != interaction.guild.id]
+
+                    print(f"{prefix()} Updated councils: {updated_councils}")
+
+                    res = databases.update_document(
+                        database_id=config.APPWRITE_DB_NAME,
+                        collection_id='councillors',
+                        document_id=f'{str(interaction.user.id)}',
+                        data={
+                            'councils': updated_councils
+                        }
+                    )
+
+                    await interaction.user.remove_roles(interaction.guild.get_role(config.ROLE_COUNCILLOR_ID))
+                    await interaction.response.send_message(
+                        "✔️ You have successfully left this server's council.")
 
     @discord.ui.button(label="The Grand Council", style=discord.ButtonStyle.danger, custom_id="co_council", emoji="🏛️")
     async def assembly(self, interaction: discord.Interaction, button: discord.ui.Button):

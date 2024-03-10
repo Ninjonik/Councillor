@@ -107,6 +107,7 @@ class Client(commands.Bot):
                 'name': guild.name,
                 'description': guild.description,
                 'council': {
+                    '$id': f"{stringified_guild_id}_c",
                     'councillors': []
                 }
             }

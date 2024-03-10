@@ -42,7 +42,7 @@ class assembly(commands.Cog):
         )
 
         await interaction.response.send_message(content=f"{member.mention}", embed=embed,
-                                                view=presets.AssemblyDialog(self.client))
+                                                view=presets.CouncilDialog(self.client))
 
 
 async def setup(client: commands.Bot) -> None:

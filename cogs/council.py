@@ -1,7 +1,11 @@
+import datetime
+
 import discord
 import discord.utils
 from discord.ext import tasks, commands
 from discord import app_commands
+
+import config
 import presets
 
 
@@ -33,16 +37,30 @@ class Council(commands.Cog):
                   'what it can do!',
             inline=True,
         )
+
+        role = '❌'
+        req_role = interaction.guild.get_role(config.ROLE_REQUIREMENT_ID)
+        if not req_role or (req_role and req_role in interaction.user.roles):
+            role = '✅'
+
+        joined_at = member.joined_at
+        current_time_utc = datetime.datetime.now(datetime.timezone.utc)
+        joined_at_days = (current_time_utc - joined_at).days
+
+        joined = '✅'
+        if joined_at_days < config.DAYS_REQUIREMENT:
+            joined = '❌'
+
         embed.add_field(
             name="**Requirements for MP**",
             value='To become a MP you need to pass the following criteria:\n'
-                  '1. Be a member of the server for 6+ months \n'
-                  '2. Have no major punishments during the last 6 months. \n'
-                  '3. Have the Valued Citizen role. \n',
+                  f'1. Be a member of the server for 6+ months {joined}\n'
+                  f'2. Have no major punishments during the last 6 months. ❓\n'
+                  f'3. Have the Valued Citizen role. {role}\n',
             inline=False,
         )
 
-        await interaction.response.send_message(content=f"{member.mention}", embed=embed,
+        await interaction.response.send_message(content=f"{member.mention}", embed=embed, ephemeral=True,
                                                 view=presets.CouncilDialog(self.client))
 
 

@@ -1,4 +1,6 @@
 import random
+import sys
+import traceback
 
 import discord
 import discord.utils

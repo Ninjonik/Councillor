@@ -9,14 +9,13 @@ import config
 class assembly_suggest(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
-        self.cursor, self.connection = config.setup()
 
     @app_commands.command(name='assembly_suggest', description="Creates an Assembly Suggestion for Assembly Members "
                                                                "to vote!")
     async def assembly_suggest(self, interaction: discord.Interaction, title: str, description: str):
-        self.cursor, self.connection = config.setup()
-        self.cursor.execute("SELECT discord_id FROM assemblies WHERE discord_id='%s'" % interaction.user.id)
-        assembly = self.cursor.fetchall()
+        # self.cursor.execute("SELECT discord_id FROM assemblies WHERE discord_id='%s'" % interaction.user.id)
+        # assembly = self.cursor.fetchall()
+        assembly = []
         current_time = datetime.datetime.now()
         if assembly:
             await interaction.response.send_message("Suggestion successfully created!")
@@ -29,12 +28,12 @@ class assembly_suggest(commands.Cog):
             await message.add_reaction('❎')
             await message.add_reaction('🔒')
             current_time = datetime.datetime.now()
-            self.cursor.execute(
-                "INSERT INTO assembly_suggestions (message_id, author_discord_id, title, description, "
-                "created_at, updated_at) "
-                "VALUES (%s, %s, '%s', '%s', '%s', '%s') " % (
-                    message.id, interaction.user.id, title, description, current_time, current_time))
-            self.connection.commit()
+            # self.cursor.execute(
+            #     "INSERT INTO assembly_suggestions (message_id, author_discord_id, title, description, "
+            #     "created_at, updated_at) "
+            #     "VALUES (%s, %s, '%s', '%s', '%s', '%s') " % (
+            #         message.id, interaction.user.id, title, description, current_time, current_time))
+            # self.connection.commit()
         else:
             await interaction.response.send_message("You are not an Assembly Member!")
 

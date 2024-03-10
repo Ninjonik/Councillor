@@ -20,13 +20,21 @@ from PIL import Image, ImageDraw, ImageFont
 import time
 from googleapiclient import discovery
 
+from appwrite.client import Client
+from appwrite.services.databases import Databases
+from appwrite.id import ID
+
+client = Client()
+client.set_endpoint(config.APPWRITE_ENDPOINT)
+client.set_project(config.APPWRITE_PROJECT)
+client.set_key(config.APPWRITE_KEY)
 
 def prefix():
     return (Back.BLACK + Fore.GREEN + datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S") + Back.RESET + Fore.WHITE +
             Style.BRIGHT)
 
 
-token = config.bot_token
+token = config.BOT_TOKEN
 
 
 async def ban(member, reason):

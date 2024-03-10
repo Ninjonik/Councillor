@@ -112,8 +112,7 @@ class Client(commands.Bot):
                 }
             }
         )
-
-        print(res)
+        print(f"{presets.prefix()} New guild added - {guild.name}")
 
     def on_guild_update(self, before, after):
         presets.databases.update_document(

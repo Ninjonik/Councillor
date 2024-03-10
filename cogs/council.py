@@ -5,12 +5,12 @@ from discord import app_commands
 import presets
 
 
-class assembly(commands.Cog):
+class Council(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
 
     @app_commands.command(name="council", description="Become a MP or learn about Grand Council!")
-    async def assembly(self, interaction: discord.Interaction):
+    async def council(self, interaction: discord.Interaction):
         member = interaction.user
         embed = discord.Embed(
             title=f"**The Grand Council**",
@@ -29,7 +29,8 @@ class assembly(commands.Cog):
         )
         embed.add_field(
             name="What is the Grand Council?",
-            value='Click on the "Assembly" button to check what is Assembly about and what it can do!',
+            value='Click on the "The Grand Council" button to check what is the Grand Council about and '
+                  'what it can do!',
             inline=True,
         )
         embed.add_field(
@@ -38,7 +39,7 @@ class assembly(commands.Cog):
                   '1. Be a member of the server for 6+ months \n'
                   '2. Have no major punishments during the last 6 months. \n'
                   '3. Have the Valued Citizen role. \n',
-            inline=True,
+            inline=False,
         )
 
         await interaction.response.send_message(content=f"{member.mention}", embed=embed,
@@ -46,4 +47,4 @@ class assembly(commands.Cog):
 
 
 async def setup(client: commands.Bot) -> None:
-    await client.add_cog(assembly(client))
+    await client.add_cog(Council(client))

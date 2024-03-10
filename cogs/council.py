@@ -9,27 +9,35 @@ class assembly(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
 
-    @app_commands.command(name="assembly", description="Become Assembly Member or learn about Assembly!")
+    @app_commands.command(name="council", description="Become a MP or learn about Grand Council!")
     async def assembly(self, interaction: discord.Interaction):
         member = interaction.user
         embed = discord.Embed(
-            title=f"**Assembly**",
-            description="**The Assembly** is a group of members who have the right to vote on proposed changes to the "
-                        "World War Community server. These changes are put forward by the Assembly Leader, "
-                        "who is also responsible for guiding the direction of the Assembly and the server. Assembly "
-                        "Members also have the ability to suggest new changes to the Assembly Leader for future "
-                        "consideration.",
+            title=f"**The Grand Council**",
+            description="**The Grand Council** is a group of members (MPs) who have the right to vote on proposed "
+                        "changes to the "
+                        f"{interaction.guild.name} server. These changes are put forward by the Chancellor, "
+                        "who is also responsible for guiding the direction of the Grand Council and the server. MPs "
+                        "also have the ability to propose new laws to the Chancellor for future consideration.",
             colour=discord.Colour.green()
         )
         embed.set_thumbnail(url=member.guild.icon)
         embed.add_field(
-            name="**Become Assembly Member**",
-            value='Click on the "Assembly Member" button in order to become an Assembly Member yourself!',
+            name="**Become MP**",
+            value='Click on the "Become MP!" button in order to become a MP yourself!',
             inline=True,
         )
         embed.add_field(
-            name="What is Assembly?",
+            name="What is the Grand Council?",
             value='Click on the "Assembly" button to check what is Assembly about and what it can do!',
+            inline=True,
+        )
+        embed.add_field(
+            name="**Requirements for MP**",
+            value='To become a MP you need to pass the following criteria:\n'
+                  '1. Be a member of the server for 6+ months \n'
+                  '2. Have no major punishments during the last 6 months. \n'
+                  '3. Have the Valued Citizen role. \n',
             inline=True,
         )
 

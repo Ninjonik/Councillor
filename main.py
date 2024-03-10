@@ -2,6 +2,9 @@ import random
 
 import discord
 import discord.utils
+from appwrite.client import Client
+from appwrite.services.databases import Databases
+from appwrite.id import ID
 from discord.ext import tasks, commands
 from colorama import Fore
 from datetime import datetime
@@ -34,6 +37,7 @@ async def statusLoop():
     await asyncio.sleep(10)
 
 
+# noinspection PyMethodMayBeStatic
 class Client(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix=commands.when_mentioned_or('.'), intents=discord.Intents().all())
@@ -54,43 +58,6 @@ class Client(commands.Bot):
         print(presets.prefix() + " Initializing status....")
         if not statusLoop.is_running():
             statusLoop.start()
-
-    async def on_message(self, message):
-        await self.check_toxicity(message)
-        valid_greetings = {"hi", "hello", "sup", "hi!", "hello!", "sup!", "hello everyone", "hello everyone!"}
-        valid_hrus = {"hru?", "hru", "how are you?", "how are you", "how have you been?", "how have you been"}
-
-        now = datetime.datetime.utcnow()
-        if message.content.lower() in valid_greetings and now - datetime.timedelta(
-                hours=72) <= message.author.joined_at <= now:
-            rules_channel = message.guild.rules_channel
-            embed = discord.Embed(
-                title=f"Hello, {message.author.name}!",
-                description=f"Welcome to WWC's Discord, {message.author.mention}! "
-                            f"We're glad to have you here. Please take a moment to read our rules in "
-                            f"{rules_channel.mention}. "
-                            f"If you have any questions, don't hesitate to ask in the appropriate channel. Enjoy your "
-                            f"stay!",
-                color=0x00ff00
-            )
-            await message.channel.send(embed=embed)
-
-        elif message.content.lower() in valid_hrus:
-            responses = [
-                "Thanks! I'm fine! How are you?",
-                "Great, thank you. How are you?",
-                "Good, thanks, and you?",
-                "Fine, thanks. How are you?",
-                "I’m doing well.",
-                "I’m fine, maybe a little tired. I need some more coffee. ☕",
-                "Good, thanks.",
-                "Not bad, thanks. How about you?",
-                "I'm doing alright. How about you?",
-                "Can't complain, thanks. How are you?",
-                "I'm doing well, thank you. How about you?",
-                "I'm doing great, thanks. How are you?"
-            ]
-            await message.channel.send(random.choice(responses))
 
     async def on_raw_reaction_add(self, payload):
         guild = client.get_guild(payload.guild_id)
@@ -128,7 +95,43 @@ class Client(commands.Bot):
                                   f" {member.mention}\nYou can now vote again on this suggestion!")
             await channel.send(embed=embed)
 
+    def on_guild_join(self, guild):
+        # Add guild to the database
+        stringified_guild_id = str(guild.id)
+        res = presets.databases.create_document(
+            database_id=config.APPWRITE_DB_NAME,
+            collection_id='guilds',
+            document_id=stringified_guild_id,
+            data={
+                'guild_id': stringified_guild_id,
+                'name': guild.name,
+                'description': guild.description,
+                'council': {
+                    'councillors': []
+                }
+            }
+        )
+
+        print(res)
+
+    def on_guild_update(self, before, after):
+        presets.databases.update_document(
+            database_id=config.APPWRITE_DB_NAME,
+            collection_id='guilds',
+            document_id=str(before.id),
+            data={
+                'name': after.name,
+                'description': after.description
+            }
+        )
+
+    def on_guild_remove(self, guild):
+        presets.databases.delete_document(
+            database_id=config.APPWRITE_DB_NAME,
+            collection_id='guilds',
+            document_id=str(guild.id),
+        )
+
 
 client = Client()
-
 client.run(presets.token)

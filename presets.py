@@ -29,6 +29,8 @@ client.set_endpoint(config.APPWRITE_ENDPOINT)
 client.set_project(config.APPWRITE_PROJECT)
 client.set_key(config.APPWRITE_KEY)
 
+databases = Databases(client)
+
 def prefix():
     return (Back.BLACK + Fore.GREEN + datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S") + Back.RESET + Fore.WHITE +
             Style.BRIGHT)
@@ -66,8 +68,8 @@ class AssemblyDialog(discord.ui.View):
     def __init__(self, client):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Assembly Member", style=discord.ButtonStyle.blurple,
-                       custom_id="as_assembly_member", emoji="📋")
+    @discord.ui.button(label="Become MP!", style=discord.ButtonStyle.blurple,
+                       custom_id="co_council_member", emoji="📋")
     async def assembly_member(self, interaction: discord.Interaction, button: discord.ui.Button):
         # self.cursor.execute("SELECT discord_id FROM assemblies WHERE discord_id='%s'" % interaction.user.id)
         # assembly = self.cursor.fetchall()
@@ -92,7 +94,8 @@ class AssemblyDialog(discord.ui.View):
                 discord.utils.get(interaction.user.guild.roles, name="Assembly Member"))
         await interaction.response.send_message("Your roles have been updated.", ephemeral=True)
 
-    @discord.ui.button(label="Assembly", style=discord.ButtonStyle.danger, custom_id="as_assembly", emoji="📚")
+    @discord.ui.button(label="The Grand Council", style=discord.ButtonStyle.danger, custom_id="co_council", emoji="🏛️")
     async def assembly(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("https://docs.google.com/document/d/19eV4b-V6LIG1m2_pXdD_txJb"
-                                                "RaCzrMOsxy3GI1CCR5U/edit?usp=sharing")
+        await interaction.response.send_message("Detailed information in this document: "
+                                                "https://docs.google.com/document/d/"
+                                                "1f6uNX9h0NX8Ep06N74dVGsMEEqDa0I84YZp-yVvKQsg/edit?usp=sharing")

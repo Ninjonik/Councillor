@@ -6,6 +6,9 @@ from time import sleep
 import discord
 import discord.utils
 from appwrite.query import Query
+from appwrite.client import Client
+from appwrite.services.databases import Databases
+from appwrite.id import ID
 from discord.ext import tasks, commands
 from discord import app_commands
 from colorama import Back, Fore, Style
@@ -22,10 +25,6 @@ import config
 from PIL import Image, ImageDraw, ImageFont
 import time
 from googleapiclient import discovery
-
-from appwrite.client import Client
-from appwrite.services.databases import Databases
-from appwrite.id import ID
 
 client = Client()
 client.set_endpoint(config.APPWRITE_ENDPOINT)

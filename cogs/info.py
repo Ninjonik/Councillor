@@ -1,46 +1,51 @@
-import discord
-import discord.utils
-from discord.ext import tasks, commands
-from discord import app_commands
-
 import config
 
+import discord
+import discord.utils
+from discord.ext import commands
+from discord import app_commands
 
-class assembly_info(commands.Cog):
+from presets import databases
+
+
+class Information(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
 
-    @app_commands.command(name="assembly_info", description="Who is in our current assembly?")
+    @app_commands.command(name="info", description="Who is in our current council?")
     async def assembly_info(self, interaction: discord.Interaction):
-        # self.cursor.execute("SELECT * FROM assemblies")
-        # assembly = self.cursor.fetchall()
-        assembly = []
-        assembly_members = []
-        assembly_leader = "None"
-        for member in assembly:
-            val = interaction.guild.get_member(member[1]).mention
-            if member[2] == 1:
-                assembly_leader = val
-            assembly_members.append(val)
+
+        council = databases.get_document(
+            database_id=config.APPWRITE_DB_NAME,
+            collection_id='councils',
+            document_id=str(interaction.guild.id) + "_c",
+        )
+        council_members = []
+        chancellor = "None"
+        for councillor in council['councillors']:
+            councillor_discord = interaction.guild.get_member(int(councillor['$id'])).mention
+            if council['chancellor'] and councillor['$id'] == council['chancellor']['$id']:
+                chancellor = councillor_discord
+            council_members.append(councillor_discord)
 
         embed = discord.Embed(
-            title=f"**Assembly**",
-            description="**The Assembly** is a group of members who have the right to vote on proposed changes to the "
-                        "World War Community server. These changes are put forward by the Assembly Leader, "
-                        "who is also responsible for guiding the direction of the Assembly and the server. Assembly "
-                        "Members also have the ability to suggest new changes to the Assembly Leader for future "
-                        "consideration. Become Assembly Member by running /assembly command!",
+            title=f"**Council**",
+            description="**The Grand Council** is a group of members (MPs) who have the right to vote on proposed "
+                        "changes to the "
+                        f"{interaction.guild.name} server. These changes are put forward by the Chancellor, "
+                        "who is also responsible for guiding the direction of the Grand Council and the server. MPs "
+                        "also have the ability to propose new laws to the Chancellor for future consideration.",
             colour=discord.Colour.green()
         )
         embed.set_thumbnail(url=interaction.guild.icon)
         embed.add_field(
-            name="**Current Assembly Leader**",
-            value=assembly_leader,
+            name="**Current Chancellor**",
+            value=chancellor,
             inline=True,
         )
         embed.add_field(
-            name="Current Assembly Members",
-            value=", ".join(assembly_members),
+            name="Current Council Members",
+            value=", ".join(council_members),
             inline=True,
         )
 
@@ -48,4 +53,4 @@ class assembly_info(commands.Cog):
 
 
 async def setup(client: commands.Bot) -> None:
-    await client.add_cog(assembly_info(client))
+    await client.add_cog(Information(client))

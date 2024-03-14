@@ -8,7 +8,6 @@ from discord import app_commands
 import config
 import presets
 
-
 class Council(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client

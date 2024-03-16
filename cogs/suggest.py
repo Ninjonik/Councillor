@@ -1,7 +1,7 @@
 import discord
+from appwrite.query import Query
 from discord.ext import commands
 from discord import app_commands
-from typing import List
 import datetime
 
 import config
@@ -19,7 +19,7 @@ class Suggest(commands.Cog):
         councillor = databases.get_document(
             database_id=config.APPWRITE_DB_NAME,
             collection_id='councillors',
-            document_id=str(interaction.user.id),
+            document_id=str(interaction.user.id)
         )
 
         council_id = str(interaction.guild.id) + "_c"
@@ -37,19 +37,16 @@ class Suggest(commands.Cog):
         current_date = datetime.datetime.utcnow()
         voting_end_date = datetime.datetime(current_date.year, current_date.month, current_date.day + 1, 0, 0, 0)
 
-        print("COUNCILLOR:", councillor)
-
         if councillor['suggestions']:
             for suggestion in councillor['suggestions']:
-                print("SUGGESTION: ", suggestion)
-                print("DATE TOMORROW:", voting_end_date)
-                print("DATE DB:", datetime.datetime.fromisoformat(suggestion['voting_end']))
-                print("EVAL:", suggestion['council']['$id'] == council_id and voting_end_date == datetime.datetime.fromisoformat(suggestion['voting_end']))
-                # TODO: FIX SO IT DOESNT ALWAYS EVALUATE TO FALSE (probably due to milliseconds)
-                if suggestion['council']['$id'] == council_id and (voting_end_date - datetime.datetime.fromisoformat(suggestion['voting_end'])) == datetime.timedelta(0):
-                    await interaction.response.send_message(ephemeral=True,
-                                                            content="❌ You can't post another voting suggestion today.")
-                    return
+                if suggestion['council']['$id'] == council_id:
+                    db_voting_end = datetime.datetime.fromisoformat(suggestion['voting_end']).date()
+                    current_date = datetime.datetime.utcnow().date()
+                    if (db_voting_end.year == current_date.year and db_voting_end.month == current_date.month
+                            and db_voting_end.day == current_date.day + 1):
+                        await interaction.response.send_message(ephemeral=True, content="❌ You can't post another "
+                                                                                        "voting suggestion today.")
+                        return
 
         embed = discord.Embed(title=title, description=description, color=0xb3ffb3)
         embed.set_author(name=f"{interaction.user.name}#{interaction.user.discriminator}",

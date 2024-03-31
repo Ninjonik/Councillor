@@ -5,6 +5,7 @@ from discord import app_commands
 import datetime
 
 import config
+import presets
 from presets import databases
 from appwrite.id import ID
 
@@ -35,41 +36,24 @@ class Suggest(commands.Cog):
             return
 
         current_date = datetime.datetime.utcnow()
-        voting_end_date = datetime.datetime(current_date.year, current_date.month, current_date.day + 1, 0, 0, 0)
+        next_day = current_date + datetime.timedelta(days=1)
+        voting_end_date = datetime.datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0)
 
         if councillor['suggestions']:
             for suggestion in councillor['suggestions']:
                 if suggestion['council']['$id'] == council_id:
                     db_voting_end = datetime.datetime.fromisoformat(suggestion['voting_end']).date()
                     current_date = datetime.datetime.utcnow().date()
-                    if (db_voting_end.year == current_date.year and db_voting_end.month == current_date.month
-                            and db_voting_end.day == current_date.day + 1):
-                        await interaction.response.send_message(ephemeral=True, content="❌ You can't post another "
-                                                                                        "voting suggestion today.")
+
+                    tomorrow_date = current_date + datetime.timedelta(days=1)
+
+                    if db_voting_end == tomorrow_date:
+                        await interaction.response.send_message(ephemeral=True,
+                                                                content="❌ You can't post another voting suggestion today.")
                         return
 
-        embed = discord.Embed(title=title, description=description, color=0xb3ffb3)
-        embed.set_author(name=f"{interaction.user.name}#{interaction.user.discriminator}",
-                         icon_url=interaction.user.avatar)
-        channel = interaction.guild.get_channel(1217791295754604596)
-        message = await channel.send(embed=embed)
-        await message.add_reaction('✅')
-        await message.add_reaction('❎')
-
-        print(voting_end_date)
-
-        databases.create_document(
-            database_id=config.APPWRITE_DB_NAME,
-            collection_id='votes',
-            document_id=ID.unique(),
-            data={
-                "type": "law_suggestion",
-                "voting_end": str(voting_end_date),
-                'status': 'pending',
-                "suggester": str(interaction.user.id),
-                "council": council_id
-            }
-        )
+        await presets.createNewVoting(title, description, interaction.user, interaction.guild, voting_end_date,
+                                      "law_suggestion")
         await interaction.response.send_message("✅ Suggestion successfully created!")
 
 

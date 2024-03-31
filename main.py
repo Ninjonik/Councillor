@@ -5,6 +5,7 @@ import traceback
 import discord
 import discord.utils
 from appwrite.client import Client
+from appwrite.query import Query
 from appwrite.services.databases import Databases
 from appwrite.id import ID
 from discord.ext import tasks, commands
@@ -21,6 +22,119 @@ intents.typing = True
 intents.presences = True
 intents.members = True
 intents.guilds = True
+
+
+def seconds_until(hours, minutes):
+    given_time = datetime.time(hours, minutes)
+    now = datetime.datetime.now()
+    future_exec = datetime.datetime.combine(now, given_time)
+    if (future_exec - now).days < 0:  # If we are past the execution, it will take place tomorrow
+        future_exec = datetime.datetime.combine(now + datetime.timedelta(days=1), given_time)  # days always >= 0
+
+    return (future_exec - now).total_seconds()
+
+
+@tasks.loop(hours=24)
+async def update_votings():
+    wait = seconds_until(0, 10)
+    print("cya in", wait)
+    await asyncio.sleep(wait)
+    for guild in client.guilds:
+        votes = presets.databases.list_documents(
+            database_id=config.APPWRITE_DB_NAME,
+            collection_id='votes',
+            queries=[
+                Query.equal('council', str(guild.id) + "_c")
+            ]
+        )
+
+        votes = votes["documents"]
+
+        if config.VOTING_CHANNEL_ID:
+            channel = guild.get_channel(config.VOTING_CHANNEL_ID)
+
+        law_suggestion_winner = {}
+        law_suggestion_most = -1
+        for vote in votes:
+            db_voting_end = datetime.datetime.fromisoformat(vote['voting_end']).date()
+            current_date = datetime.datetime.utcnow().date()
+
+            # tomorrow_date = current_date + datetime.timedelta(days=1) # TODO: for testing purposes
+            tomorrow_date = current_date
+
+            if db_voting_end == tomorrow_date:
+                if vote["type"] == "law_suggestion":
+                    voting_result = 0
+                    for councillor_vote in vote["councillor_votes"]:
+                        if councillor_vote["stance"]:
+                            voting_result += 1
+                        else:
+                            voting_result -= 1
+                    if voting_result > law_suggestion_most:
+                        law_suggestion_winner = vote
+                    else:
+                        # Remove lost suggested votes from the database
+                        presets.databases.delete_document(
+                            database_id=config.APPWRITE_DB_NAME,
+                            collection_id='votes',
+                            document_id=vote["$id"],
+                        )
+                if vote["type"] == "law":
+                    passed = False
+                    color = 0xFF0000
+                    text = "**NOT** PASSED."
+                    voting_result = 0
+                    for councillor_vote in vote["councillor_votes"]:
+                        if councillor_vote["stance"]:
+                            voting_result += 1
+                        else:
+                            voting_result -= 1
+                    if voting_result > 0:
+                        passed = True
+                        color = 0x00FF00
+                        text = "**PASSED**."
+
+                    if config.VOTING_CHANNEL_ID:
+                        # Send a law voting result informational embed
+                        embed = discord.Embed(title=vote["title"], description=vote["description"], color=color)
+                        embed.add_field(name="Result:", value=text, inline=False)
+                        embed.add_field(name="Vote sum:", value=f"**{voting_result}** (1 or more required to pass)",
+                                        inline=False)
+                        embed.set_footer(text=f"Originally proposed by: {vote['suggester']['name']}")
+                        await channel.send(embed=embed)
+
+                    # Clean up
+                    try:
+                        presets.databases.delete_document(
+                            database_id=config.APPWRITE_DB_NAME,
+                            collection_id='votes',
+                            document_id=vote["$id"]
+                        )
+                    except Exception as e:
+                        print(e)
+
+        current_date = datetime.datetime.utcnow()
+        next_day = current_date + datetime.timedelta(days=1)
+        voting_end_date = datetime.datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0)
+
+        if law_suggestion_winner:
+            # Send a new embed with a new voting
+            author = guild.get_member(int(law_suggestion_winner["suggester"]["$id"]))
+            print(author)
+
+            await presets.createNewVoting(law_suggestion_winner["title"], law_suggestion_winner["description"], author, guild, voting_end_date, "law")
+
+            # Updating the law_suggestion with most positive votes to the regular voting next day
+            presets.databases.delete_document(
+                database_id=config.APPWRITE_DB_NAME,
+                collection_id='votes',
+                document_id=law_suggestion_winner["$id"],
+            )
+
+            if not config.VOTING_CHANNEL_ID:
+                return
+
+    print("See you in 24 hours from exactly now")
 
 
 @tasks.loop(seconds=30)
@@ -60,47 +174,92 @@ class Client(commands.Bot):
         print(presets.prefix() + " Initializing status....")
         if not statusLoop.is_running():
             statusLoop.start()
+        if not update_votings.is_running():
+            update_votings.start()
 
     async def on_raw_reaction_add(self, payload):
         guild = client.get_guild(payload.guild_id)
         member = await guild.fetch_member(payload.user_id)
         channel = await guild.fetch_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
-        role = discord.utils.get(guild.roles, name="Assembly Leader")
 
-        print(member, message, role, guild)
-        if not member.bot and role in member.roles and payload.emoji.name == "🔒":
-            current_time = datetime.datetime.now()
-            approvals = discord.utils.get(message.reactions, emoji="✅")
-            denials = discord.utils.get(message.reactions, emoji="❎")
-            count_sum = approvals.count - denials.count
-            # self.cursor.execute("UPDATE assembly_suggestions SET votes=%s, updated_at='%s' "
-            #                     "WHERE message_id=%s" % (count_sum, current_time, payload.message_id))
-            # self.connection.commit()
-            embed = discord.Embed(title="Suggestion closed!", color=0xff0000)
-            embed.add_field(name="Closed!",
-                            value=f"Suggestion #{message.id} has been 🔒 closed by the Assembly Leader {member.mention}",
-                            inline=True)
-            embed.add_field(name="Voting Result!", value=f"\nVotes result: **{approvals.count}** - **{denials.count}**",
-                            inline=True)
-            await channel.send(embed=embed)
-            await message.clear_reactions()
-            await message.add_reaction("🔓")
-        elif not member.bot and role in member.roles and payload.emoji.name == "🔓":
-            await message.clear_reactions()
-            await message.add_reaction('✅')
-            await message.add_reaction('❎')
-            await message.add_reaction('🔒')
-            embed = discord.Embed(title="Suggestion re-opened!", color=0x00ff00)
-            embed.add_field(name="Re-Opened!",
-                            value=f"Suggestion #{message.id} has been 🔓 re-opened by the Assembly Leader"
-                                  f" {member.mention}\nYou can now vote again on this suggestion!")
-            await channel.send(embed=embed)
+        # If not councillor role then you can't do anything c:
+        role_id = config.ROLE_COUNCILLOR_ID
+        if role_id:
+            role = guild.get_role(role_id)
+        else:
+            print("No councillor role set")
+            return
+
+        if member.bot or role not in member.roles:
+            print("Member bot / no councillor role")
+            return
+
+        voteData = presets.databases.list_documents(
+            database_id=config.APPWRITE_DB_NAME,
+            collection_id='votes',
+            queries=[
+                Query.equal('message_id', str(message.id)),
+            ]
+        )
+
+        if voteData and voteData["documents"] and voteData["documents"][0]:
+            voteData = voteData["documents"][0]
+        else:
+            print(voteData)
+            print(voteData["documents"])
+            print(voteData["documents"][0])
+
+            print("No documents found")
+            return
+
+        # Check if past the voting date
+        voting_end_date_str = voteData['voting_end'].split('+')[0]  # Remove timezone info
+        voting_end_date = datetime.datetime.strptime(voting_end_date_str, "%Y-%m-%dT%H:%M:%S.%f")
+        if datetime.datetime.utcnow() > voting_end_date:
+            print("Past voting date")
+            return
+
+        # Check if vote already exists for this user for this
+        councillorVote = presets.databases.list_documents(
+            database_id=config.APPWRITE_DB_NAME,
+            collection_id='councillor_votes',
+            queries=[
+                Query.equal('vote', voteData["$id"]),
+                Query.equal('councillor', member.id),
+            ]
+        )
+
+        # Remove the previous vote from DB
+        if councillorVote and councillorVote["documents"] and councillorVote["documents"][0]:
+            presets.databases.delete_document(
+                database_id=config.APPWRITE_DB_NAME,
+                collection_id="councillor_votes",
+                document_id=councillorVote["documents"][0]["$id"]
+            )
+
+        stance = False
+
+        if payload.emoji.name == "✅":
+            stance = True
+
+        presets.databases.create_document(
+            database_id=config.APPWRITE_DB_NAME,
+            collection_id='councillor_votes',
+            document_id=ID.unique(),
+            data={
+                "councillor": str(member.id),
+                "vote": voteData["$id"],
+                "stance": stance
+            }
+        )
+
+        print(f"New vote added: {stance} by {member.name} on {voteData['$id']}")
 
     def on_guild_join(self, guild):
         # Add guild to the database
         stringified_guild_id = str(guild.id)
-        res = presets.databases.create_document(
+        presets.databases.create_document(
             database_id=config.APPWRITE_DB_NAME,
             collection_id='guilds',
             document_id=stringified_guild_id,

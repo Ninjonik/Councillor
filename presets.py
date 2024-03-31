@@ -41,6 +41,83 @@ def log(content):
     print(prefix() + content)
 
 
+voting_types = {
+    "law": {
+        "text": "Law",
+        "color": "0x4169E1",
+        "emoji": "⚖️"
+    },
+    "ultralaw": {
+        "text": "Ultra Law",
+        "color": "0x8A2BE2",
+        "emoji": "🔵"
+    },
+    "superlaw": {
+        "text": "Super Law",
+        "color": "0xFF6347",
+        "emoji": "📜"
+    },
+    "chancellor_election": {
+        "text": "Chancellor Election",
+        "color": "0x20B2AA",
+        "emoji": "🗳️"
+    },
+    "chancellor_impeachment": {
+        "text": "Chancellor Impeachment",
+        "color": "0xFF4500",
+        "emoji": "⚠️"
+    },
+    "admin_impeachment": {
+        "text": "Admin Impeachment",
+        "color": "0xFFA500",
+        "emoji": "🛑"
+    },
+    "admin_election": {
+        "text": "Admin Election",
+        "color": "0x32CD32",
+        "emoji": "👥"
+    },
+    "law_suggestion": {
+        "text": "Law Suggestion",
+        "color": "0x9932CC",
+        "emoji": "💡"
+    },
+}
+
+
+async def createNewVoting(title, description, user, guild, voting_end_date, voting_type):
+    council_id = str(guild.id) + "_c"
+
+    voting_type_data = voting_types[voting_type]
+    color = discord.Colour(int(voting_type_data["color"], 16))
+    embed = discord.Embed(title=title, description=description, color=color)
+    embed.set_author(name=f"{user.name}#{user.discriminator}",
+                     icon_url=user.avatar)
+    if not config.VOTING_CHANNEL_ID:
+        return
+    channel = guild.get_channel(config.VOTING_CHANNEL_ID)
+    embed.set_footer(text=f"⏰ Voting end at: {voting_end_date.strftime('%d.%m.%Y, %H:%M:%S')}")
+    embed.add_field(name="Type:", value=f"{voting_type_data['emoji']} {voting_type_data['text']}", inline=False)
+    message = await channel.send(embed=embed)
+    await message.add_reaction('✅')
+    await message.add_reaction('❎')
+
+    databases.create_document(
+        database_id=config.APPWRITE_DB_NAME,
+        collection_id='votes',
+        document_id=ID.unique(),
+        data={
+            "type": voting_type,
+            "voting_end": str(voting_end_date),
+            'status': 'pending',
+            "suggester": str(user.id),
+            "council": council_id,
+            "message_id": str(message.id),
+            "title": title,
+            "description": description,
+        }
+    )
+
 class CouncilDialog(discord.ui.View):
     def __init__(self, client):
         super().__init__(timeout=None)
@@ -86,7 +163,7 @@ class CouncilDialog(discord.ui.View):
         if not councillor_data["documents"] or len(councillor_data["documents"]) == 0:
             print(f"{prefix()} New raw councillor in {interaction.guild.name} - {interaction.user.name}")
 
-            res = databases.create_document(
+            databases.create_document(
                 database_id=config.APPWRITE_DB_NAME,
                 collection_id='councillors',
                 document_id=f'{str(interaction.user.id)}',

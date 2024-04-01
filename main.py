@@ -206,10 +206,6 @@ class Client(commands.Bot):
         if voteData and voteData["documents"] and voteData["documents"][0]:
             voteData = voteData["documents"][0]
         else:
-            print(voteData)
-            print(voteData["documents"])
-            print(voteData["documents"][0])
-
             print("No documents found")
             return
 

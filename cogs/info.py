@@ -24,7 +24,7 @@ class Information(commands.Cog):
         chancellor = "None"
         for councillor in council['councillors']:
             councillor_discord = interaction.guild.get_member(int(councillor['$id'])).mention
-            if council['chancellor'] and councillor['$id'] == council['chancellor']['$id']:
+            if council['chancellor'] and councillor['$id'] == council['chancellor']:
                 chancellor = councillor_discord
             council_members.append(councillor_discord)
 

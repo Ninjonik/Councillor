@@ -12,6 +12,7 @@ from colorama import Back, Fore, Style
 from datetime import datetime
 import datetime
 import config
+import builtins
 
 client = Client()
 client.set_endpoint(config.APPWRITE_ENDPOINT)
@@ -24,6 +25,15 @@ databases = Databases(client)
 def prefix():
     return (Back.BLACK + Fore.GREEN + datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S") + Back.RESET + Fore.WHITE +
             Style.BRIGHT)
+
+
+def print(*args, **kwargs):
+    """
+    Custom print function that adds a prefix to the start of the output.
+    """
+    message = prefix() + ' '.join(map(str, args))
+    # Call the original print function from the builtins module
+    builtins.print(message, **kwargs)
 
 
 token = config.BOT_TOKEN
@@ -117,6 +127,7 @@ async def createNewVoting(title, description, user, guild, voting_end_date, voti
             "description": description,
         }
     )
+
 
 class CouncilDialog(discord.ui.View):
     def __init__(self, client):

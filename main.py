@@ -1,7 +1,3 @@
-import random
-import sys
-import traceback
-
 import discord
 import discord.utils
 from appwrite.client import Client
@@ -16,6 +12,7 @@ import asyncio
 import datetime
 import config
 import presets
+from presets import print
 
 intents = discord.Intents.all()
 intents.typing = True
@@ -55,6 +52,7 @@ async def update_votings():
 
         law_suggestion_winner = {}
         law_suggestion_most = -1
+
         for vote in votes:
             db_voting_end = datetime.datetime.fromisoformat(vote['voting_end']).date()
             current_date = datetime.datetime.utcnow().date()
@@ -62,14 +60,18 @@ async def update_votings():
             # tomorrow_date = current_date + datetime.timedelta(days=1) # TODO: for testing purposes
             tomorrow_date = current_date
 
+            # If today's date is the same as the ending db date, then proceed
             if db_voting_end == tomorrow_date:
                 if vote["type"] == "law_suggestion":
                     voting_result = 0
                     for councillor_vote in vote["councillor_votes"]:
                         if councillor_vote["stance"]:
+                            # Add positive vote
                             voting_result += 1
                         else:
+                            # Add negative vote
                             voting_result -= 1
+                    # If has more positive votes than previous, set it
                     if voting_result > law_suggestion_most:
                         law_suggestion_winner = vote
                     else:
@@ -79,6 +81,8 @@ async def update_votings():
                             collection_id='votes',
                             document_id=vote["$id"],
                         )
+
+                # If vote type is a law
                 if vote["type"] == "law":
                     passed = False
                     color = 0xFF0000
@@ -103,7 +107,7 @@ async def update_votings():
                         embed.set_footer(text=f"Originally proposed by: {vote['suggester']['name']}")
                         await channel.send(embed=embed)
 
-                    # Clean up
+                    # Clean up - remove already passed / failed law
                     try:
                         presets.databases.delete_document(
                             database_id=config.APPWRITE_DB_NAME,
@@ -118,11 +122,12 @@ async def update_votings():
         voting_end_date = datetime.datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0)
 
         if law_suggestion_winner:
-            # Send a new embed with a new voting
+            # Send new voting - about the law this time for the vote which had most suggestion votes
             author = guild.get_member(int(law_suggestion_winner["suggester"]["$id"]))
             print(author)
 
-            await presets.createNewVoting(law_suggestion_winner["title"], law_suggestion_winner["description"], author, guild, voting_end_date, "law")
+            await presets.createNewVoting(law_suggestion_winner["title"], law_suggestion_winner["description"], author,
+                                          guild, voting_end_date, "law")
 
             # Updating the law_suggestion with most positive votes to the regular voting next day
             presets.databases.delete_document(
@@ -138,7 +143,7 @@ async def update_votings():
 
 
 @tasks.loop(seconds=30)
-async def statusLoop():
+async def status_loop():
     await client.wait_until_ready()
     await client.change_presence(status=discord.Status.idle,
                                  activity=discord.Activity(type=discord.ActivityType.watching,
@@ -153,7 +158,6 @@ async def statusLoop():
     await asyncio.sleep(10)
 
 
-# noinspection PyMethodMayBeStatic
 class Client(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix=commands.when_mentioned_or('.'), intents=discord.Intents().all())
@@ -164,16 +168,16 @@ class Client(commands.Bot):
             await self.load_extension(ext)
 
     async def on_ready(self):
-        print(presets.prefix() + " Logged in as " + Fore.YELLOW + self.user.name)
-        print(presets.prefix() + " Bot ID " + Fore.YELLOW + str(self.user.id))
-        print(presets.prefix() + " Discord Version " + Fore.YELLOW + discord.__version__)
-        print(presets.prefix() + " Python version " + Fore.YELLOW + platform.python_version())
-        print(presets.prefix() + " Syncing slash commands...")
+        print(" Logged in as " + Fore.YELLOW + self.user.name)
+        print(" Bot ID " + Fore.YELLOW + str(self.user.id))
+        print(" Discord Version " + Fore.YELLOW + discord.__version__)
+        print(" Python version " + Fore.YELLOW + platform.python_version())
+        print(" Syncing slash commands...")
         synced = await self.tree.sync()
-        print(presets.prefix() + " Slash commands synced " + Fore.YELLOW + str(len(synced)) + " Commands")
-        print(presets.prefix() + " Initializing status....")
-        if not statusLoop.is_running():
-            statusLoop.start()
+        print(" Slash commands synced " + Fore.YELLOW + str(len(synced)) + " Commands")
+        print(" Initializing status....")
+        if not status_loop.is_running():
+            status_loop.start()
         if not update_votings.is_running():
             update_votings.start()
 
@@ -233,6 +237,7 @@ class Client(commands.Bot):
                 collection_id="councillor_votes",
                 document_id=councillorVote["documents"][0]["$id"]
             )
+            print(f"Removing previous vote from the db for {member.name} in {guild.name}")
 
         stance = False
 
@@ -269,7 +274,7 @@ class Client(commands.Bot):
                 }
             }
         )
-        print(f"{presets.prefix()} New guild added - {guild.name}")
+        print(f"New guild added - {guild.name}")
 
     def on_guild_update(self, before, after):
         presets.databases.update_document(

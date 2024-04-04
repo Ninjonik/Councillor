@@ -43,11 +43,12 @@ class Information(commands.Cog):
             value=chancellor,
             inline=True,
         )
-        embed.add_field(
-            name="Current Council Members",
-            value=", ".join(council_members),
-            inline=True,
-        )
+        if len(council_members) > 1:
+            embed.add_field(
+                name="Current Council Members",
+                value=", ".join(council_members),
+                inline=True,
+            )
 
         await interaction.response.send_message(embed=embed)
 

@@ -37,7 +37,7 @@ class Suggest(commands.Cog):
 
         current_date = datetime.datetime.utcnow()
         next_day = current_date + datetime.timedelta(days=1)
-        voting_end_date = datetime.datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0)
+        voting_end_date = datetime.datetime(next_day.year, next_day.month, next_day.day, 0, 0, 1)
 
         if councillor['suggestions']:
             for suggestion in councillor['suggestions']:

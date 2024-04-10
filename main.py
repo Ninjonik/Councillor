@@ -193,12 +193,24 @@ class Client(commands.Bot):
         except Exception as e:
             pass
 
+    async def send_dm(self, member, message):
+        try:
+            dm_channel = await member.create_dm()
+            await dm_channel.send(message)
+        except Exception as e:
+            print(f"Failed to send DM to {member.name}: {str(e)}")
+
     async def on_raw_reaction_add(self, payload):
         guild = client.get_guild(payload.guild_id)
         member = await guild.fetch_member(payload.user_id)
         channel = await guild.fetch_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
-        dm_channel = await member.create_dm()
+
+        async def remove_reactions(message, member):
+            try:
+                await self.remove_reactions(message, member)
+            except Exception as e:
+                print(f"Failed to remove reactions: {str(e)}")
 
         # If not councillor role then you can't do anything c:
         role_id = config.ROLE_COUNCILLOR_ID
@@ -206,14 +218,14 @@ class Client(commands.Bot):
             role = guild.get_role(role_id)
         else:
             print("❌ Councillor role doesn't exist in this server.")
-            await dm_channel.send("❌ Councillor role doesn't exist in this server.")
-            await self.remove_reactions(message, member)
+            await self.send_dm(member, "❌ Councillor role doesn't exist in this server.")
+            await remove_reactions(message, member)
             return
 
         if member.bot or role not in member.roles:
             print("❌ You're not a councillor in this server.")
-            await dm_channel.send("❌ You're not a councillor in this server.")
-            await self.remove_reactions(message, member)
+            await self.send_dm(member, "❌ You're not a councillor in this server.")
+            await remove_reactions(message, member)
             return
 
         voteData = presets.databases.list_documents(
@@ -228,8 +240,8 @@ class Client(commands.Bot):
             voteData = voteData["documents"][0]
         else:
             print("❌ No documents found.")
-            await dm_channel.send("❌ No documents found.")
-            await self.remove_reactions(message, member)
+            await self.send_dm(member, "❌ No documents found.")
+            await remove_reactions(message, member)
             return
 
         # Check if past the voting date
@@ -237,8 +249,8 @@ class Client(commands.Bot):
         voting_end_date = datetime.datetime.strptime(voting_end_date_str, "%Y-%m-%dT%H:%M:%S.%f")
         if datetime.datetime.utcnow() > voting_end_date:
             print("Past voting date")
-            await dm_channel.send("❌ You can't vote past the voting date.")
-            await self.remove_reactions(message, member)
+            await self.send_dm(member, "❌ You can't vote past the voting date.")
+            await remove_reactions(message, member)
             return
 
         # Check if vote already exists for this user for this
@@ -258,7 +270,7 @@ class Client(commands.Bot):
                 collection_id="councillor_votes",
                 document_id=councillorVote["documents"][0]["$id"]
             )
-            await dm_channel.send("✅ Your previous vote has been removed.")
+            await self.send_dm(member, "✅ Your previous vote has been removed.")
             print(f"Removing previous vote from the db for {member.name} in {guild.name}")
 
         stance = False
@@ -277,7 +289,7 @@ class Client(commands.Bot):
             }
         )
 
-        await dm_channel.send("✅ You have successfully voted on the law!")
+        await self.send_dm(member, "✅ You have successfully voted on the law!")
         print(f"New vote added: {stance} by {member.name} on {voteData['$id']}")
 
     def on_guild_join(self, guild):

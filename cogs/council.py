@@ -54,7 +54,7 @@ class Council(commands.Cog):
         embed.add_field(
             name="**Requirements for MP**",
             value='To become a MP you need to pass the following criteria:\n'
-                  f'1. Be a member of the server for 6+ months {joined}\n'
+                  f'1. Be a member of the server for 3+ months {joined}\n'
                   f'2. Have no major punishments during the last 6 months. ❓\n'
                   f'3. Have the Valued Citizen role. {role}\n',
             inline=False,

@@ -150,7 +150,7 @@ class CouncilDialog(discord.ui.View):
         if joined_at_days < config.DAYS_REQUIREMENT:
             await interaction.response.send_message(ephemeral=True, content="❌ Unfortunately you can't become MP yet. "
                                                                             "You have to be in the server for "
-                                                                            "at least 6 months.")
+                                                                            "at least 3 months.")
             return
 
         role_id = config.ROLE_REQUIREMENT_ID

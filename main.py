@@ -215,6 +215,19 @@ class Client(commands.Bot):
             except Exception as e:
                 print(f"Failed to remove reactions: {str(e)}")
 
+        voteData = presets.databases.list_documents(
+            database_id=config.APPWRITE_DB_NAME,
+            collection_id='votes',
+            queries=[
+                Query.equal('message_id', str(message.id)),
+            ]
+        )
+
+        if voteData and voteData["documents"] and voteData["documents"][0]:
+            voteData = voteData["documents"][0]
+        else:
+            return
+
         # If not councillor role then you can't do anything c:
         role_id = config.ROLE_COUNCILLOR_ID
         if role_id:
@@ -228,22 +241,6 @@ class Client(commands.Bot):
         if role not in member.roles:
             print("❌ You're not a councillor in this server.")
             await self.send_dm(member, "❌ You're not a councillor in this server.")
-            await remove_reactions(message, member)
-            return
-
-        voteData = presets.databases.list_documents(
-            database_id=config.APPWRITE_DB_NAME,
-            collection_id='votes',
-            queries=[
-                Query.equal('message_id', str(message.id)),
-            ]
-        )
-
-        if voteData and voteData["documents"] and voteData["documents"][0]:
-            voteData = voteData["documents"][0]
-        else:
-            print("❌ No documents found.")
-            await self.send_dm(member, "❌ No documents found.")
             await remove_reactions(message, member)
             return
 

@@ -206,6 +206,9 @@ class Client(commands.Bot):
         channel = await guild.fetch_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
 
+        if member.bot:
+            return
+
         async def remove_reactions(message, member):
             try:
                 await self.remove_reactions(message, member)
@@ -222,7 +225,7 @@ class Client(commands.Bot):
             await remove_reactions(message, member)
             return
 
-        if member.bot or role not in member.roles:
+        if role not in member.roles:
             print("❌ You're not a councillor in this server.")
             await self.send_dm(member, "❌ You're not a councillor in this server.")
             await remove_reactions(message, member)

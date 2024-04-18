@@ -33,9 +33,10 @@ def seconds_until(hours, minutes):
 
 @tasks.loop(hours=24)
 async def update_votings():
-    wait = seconds_until(0, 10)
-    print("cya in", wait)
-    await asyncio.sleep(wait)
+    if not config.DEBUG_MODE:
+        wait = seconds_until(11, 40)
+        print("cya in", wait)
+        await asyncio.sleep(wait)
     for guild in client.guilds:
         votes = presets.databases.list_documents(
             database_id=config.APPWRITE_DB_NAME,

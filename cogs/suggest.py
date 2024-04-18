@@ -2,6 +2,8 @@ import discord
 from appwrite.query import Query
 from discord.ext import commands
 from discord import app_commands
+from typing import List
+
 import datetime
 
 import config
@@ -15,7 +17,7 @@ class Suggest(commands.Cog):
         self.client = client
 
     @app_commands.command(name='suggest', description="Creates a Council Suggestion for MPs to vote!")
-    @app_commands.choices(choices=[
+    @app_commands.choices(type=[
         app_commands.Choice(name="Law", value="law"),
         app_commands.Choice(name="Superlaw", value="superlaw"),
         app_commands.Choice(name="Ultralaw", value="ultralaw"),

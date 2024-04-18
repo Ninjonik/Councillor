@@ -31,7 +31,7 @@ def print(*args, **kwargs):
     """
     Custom print function that adds a prefix to the start of the output.
     """
-    message = prefix() + '  '.join(map(str, args))
+    message = prefix() + ' ' + ' '.join(map(str, args))
     # Call the original print function from the builtins module
     builtins.print(message, **kwargs)
 

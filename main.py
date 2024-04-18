@@ -179,14 +179,14 @@ class Client(commands.Bot):
             await self.load_extension(ext)
 
     async def on_ready(self):
-        print(" Logged in as " + Fore.YELLOW + self.user.name)
-        print(" Bot ID " + Fore.YELLOW + str(self.user.id))
-        print(" Discord Version " + Fore.YELLOW + discord.__version__)
-        print(" Python version " + Fore.YELLOW + platform.python_version())
-        print(" Syncing slash commands...")
+        print("Logged in as " + Fore.YELLOW + self.user.name)
+        print("Bot ID " + Fore.YELLOW + str(self.user.id))
+        print("Discord Version " + Fore.YELLOW + discord.__version__)
+        print("Python version " + Fore.YELLOW + platform.python_version())
+        print("Syncing slash commands...")
         synced = await self.tree.sync()
-        print(" Slash commands synced " + Fore.YELLOW + str(len(synced)) + " Commands")
-        print(" Initializing status....")
+        print("Slash commands synced " + Fore.YELLOW + str(len(synced)) + " Commands")
+        print("Initializing status....")
         if not status_loop.is_running():
             status_loop.start()
         if not update_votings.is_running():

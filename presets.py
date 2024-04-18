@@ -55,47 +55,55 @@ voting_types = {
     "law": {
         "text": "Law",
         "color": "0x4169E1",
-        "emoji": "⚖️"
+        "emoji": "⚖️",
+        "voting_days": 1,
     },
     "ultralaw": {
         "text": "Ultra Law",
         "color": "0x8A2BE2",
-        "emoji": "🔵"
-    },
+        "emoji": "🔵",
+        "voting_days": 7,
+},
     "superlaw": {
         "text": "Super Law",
         "color": "0xFF6347",
-        "emoji": "📜"
+        "emoji": "📜",
+        "voting_days": 1,
     },
     "chancellor_election": {
         "text": "Chancellor Election",
         "color": "0x20B2AA",
-        "emoji": "🗳️"
+        "emoji": "🗳️",
+        "voting_days": 1,
     },
     "chancellor_impeachment": {
         "text": "Chancellor Impeachment",
         "color": "0xFF4500",
-        "emoji": "⚠️"
+        "emoji": "⚠️",
+        "voting_days": 1,
     },
     "admin_impeachment": {
         "text": "Admin Impeachment",
         "color": "0xFFA500",
-        "emoji": "🛑"
+        "emoji": "🛑",
+        "voting_days": 1,
     },
     "admin_election": {
         "text": "Admin Election",
         "color": "0x32CD32",
-        "emoji": "👥"
+        "emoji": "👥",
+        "voting_days": 1,
     },
     "law_suggestion": {
         "text": "Law Suggestion",
         "color": "0x9932CC",
-        "emoji": "💡"
+        "emoji": "💡",
+        "voting_days": 1,
     },
 }
 
 
-async def createNewVoting(title, description, user, guild, voting_end_date, voting_type):
+async def createNewVoting(title, description, user, guild, voting_end_date, voting_type, status = "voting"):
     council_id = str(guild.id) + "_c"
 
     voting_type_data = voting_types[voting_type]
@@ -119,7 +127,7 @@ async def createNewVoting(title, description, user, guild, voting_end_date, voti
         data={
             "type": voting_type,
             "voting_end": str(voting_end_date),
-            'status': 'pending',
+            'status': status,
             "suggester": str(user.id),
             "council": council_id,
             "message_id": str(message.id),

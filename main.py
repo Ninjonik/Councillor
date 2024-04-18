@@ -34,7 +34,7 @@ def seconds_until(hours, minutes):
 @tasks.loop(hours=24)
 async def update_votings():
     if not config.DEBUG_MODE:
-        wait = seconds_until(11, 40)
+        wait = seconds_until(00, 10)
         print("cya in", wait)
         await asyncio.sleep(wait)
     for guild in client.guilds:
@@ -68,7 +68,11 @@ async def update_votings():
             print("TOMORROW DATE: ", tomorrow_date)
             # If today's date is the same as the ending db date, then proceed
             if db_voting_end == tomorrow_date:
-                if vote["type"] == "law_suggestion":
+
+                voting_type_data = presets.voting_types[vote["type"]]
+                color = discord.Colour(int(voting_type_data["color"], 16))
+
+                if vote["status"] == "pending":
                     voting_result = 0
                     for councillor_vote in vote["councillor_votes"]:
                         if councillor_vote["stance"]:
@@ -89,9 +93,8 @@ async def update_votings():
                         )
 
                 # If vote type is a law
-                if vote["type"] == "law":
+                if vote["type"] in presets.voting_types and vote["status"] == "voting":
                     passed = False
-                    color = 0xFF0000
                     text = "**NOT** PASSED."
                     voting_result = 0
                     for councillor_vote in vote["councillor_votes"]:
@@ -124,16 +127,18 @@ async def update_votings():
                         print(e)
 
         current_date = datetime.datetime.utcnow()
-        next_day = current_date + datetime.timedelta(days=1)
-        voting_end_date = datetime.datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0)
 
         if law_suggestion_winner:
             # Send new voting - about the law this time for the vote which had most suggestion votes
             author = guild.get_member(int(law_suggestion_winner["suggester"]["$id"]))
-            print(author)
+
+            # Generate correct voting end date and time
+            voting_type_data = presets.voting_types[law_suggestion_winner["type"]]
+            next_day = current_date + datetime.timedelta(days=voting_type_data["voting_days"])
+            voting_end_date = datetime.datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0)
 
             await presets.createNewVoting(law_suggestion_winner["title"], law_suggestion_winner["description"], author,
-                                          guild, voting_end_date, "law")
+                                          guild, voting_end_date, law_suggestion_winner["type"])
 
             # Updating the law_suggestion with most positive votes to the regular voting next day
             presets.databases.delete_document(

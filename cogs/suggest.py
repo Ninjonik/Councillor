@@ -15,7 +15,13 @@ class Suggest(commands.Cog):
         self.client = client
 
     @app_commands.command(name='suggest', description="Creates a Council Suggestion for MPs to vote!")
-    async def assembly_suggest(self, interaction: discord.Interaction, title: str, description: str):
+    @app_commands.choices(choices=[
+        app_commands.Choice(name="Law", value="law"),
+        app_commands.Choice(name="Superlaw", value="superlaw"),
+        app_commands.Choice(name="Ultralaw", value="ultralaw"),
+    ])
+    async def assembly_suggest(self, interaction: discord.Interaction, title: str, description: str,
+                               type: app_commands.Choice[str]):
 
         councillor = databases.get_document(
             database_id=config.APPWRITE_DB_NAME,
@@ -49,11 +55,12 @@ class Suggest(commands.Cog):
 
                     if db_voting_end == tomorrow_date:
                         await interaction.response.send_message(ephemeral=True,
-                                                                content="❌ You can't post another voting suggestion today.")
+                                                                content="❌ You can't post another voting "
+                                                                        "suggestion today.")
                         return
 
         await presets.createNewVoting(title, description, interaction.user, interaction.guild, voting_end_date,
-                                      "law_suggestion")
+                                      type, "pending")
         await interaction.response.send_message("✅ Suggestion successfully created!")
 
 

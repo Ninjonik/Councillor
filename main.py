@@ -61,6 +61,9 @@ async def update_votings():
             # tomorrow_date = current_date + datetime.timedelta(days=1) # TODO: for testing purposes
             tomorrow_date = current_date
 
+            print("VOTE: ", vote["title"])
+            print("CURRENT TIME: ", datetime.datetime.utcnow().time())
+            print("CURRENT DATE: ", datetime.datetime.utcnow().date())
             print("DB VOTING END: ", db_voting_end)
             print("TOMORROW DATE: ", tomorrow_date)
             # If today's date is the same as the ending db date, then proceed

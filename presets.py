@@ -31,7 +31,7 @@ def print(*args, **kwargs):
     """
     Custom print function that adds a prefix to the start of the output.
     """
-    message = prefix() + ' '.join(map(str, args))
+    message = prefix() + '  '.join(map(str, args))
     # Call the original print function from the builtins module
     builtins.print(message, **kwargs)
 
@@ -106,7 +106,7 @@ async def createNewVoting(title, description, user, guild, voting_end_date, voti
     if not config.VOTING_CHANNEL_ID:
         return
     channel = guild.get_channel(config.VOTING_CHANNEL_ID)
-    embed.set_footer(text=f"⏰ Voting end at: {voting_end_date.strftime('%d.%m.%Y, %H:%M:%S')}")
+    embed.set_footer(text=f"⏰ Voting end at: {voting_end_date.strftime('%d.%m.%Y, %H:%M:%S')} UTC+0")
     embed.add_field(name="Type:", value=f"{voting_type_data['emoji']} {voting_type_data['text']}", inline=False)
     message = await channel.send(embed=embed)
     await message.add_reaction('✅')

@@ -23,7 +23,7 @@ intents.guilds = True
 
 def seconds_until(hours, minutes):
     given_time = datetime.time(hours, minutes)
-    now = datetime.datetime.now()
+    now = datetime.datetime.utcnow()
     future_exec = datetime.datetime.combine(now, given_time)
     if (future_exec - now).days < 0:  # If we are past the execution, it will take place tomorrow
         future_exec = datetime.datetime.combine(now + datetime.timedelta(days=1), given_time)  # days always >= 0

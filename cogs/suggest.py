@@ -17,13 +17,13 @@ class Suggest(commands.Cog):
         self.client = client
 
     @app_commands.command(name='suggest', description="Creates a Council Suggestion for MPs to vote!")
-    @app_commands.choices(type=[
+    @app_commands.choices(voting_type=[
         app_commands.Choice(name="Law", value="law"),
         app_commands.Choice(name="Superlaw", value="superlaw"),
         app_commands.Choice(name="Ultralaw", value="ultralaw"),
     ])
     async def assembly_suggest(self, interaction: discord.Interaction, title: str, description: str,
-                               type: app_commands.Choice[str]):
+                               voting_type: app_commands.Choice[str]):
 
         councillor = databases.get_document(
             database_id=config.APPWRITE_DB_NAME,
@@ -62,7 +62,7 @@ class Suggest(commands.Cog):
                         return
 
         await presets.createNewVoting(title, description, interaction.user, interaction.guild, voting_end_date,
-                                      type, "pending")
+                                      voting_type.value, "pending")
         await interaction.response.send_message("✅ Suggestion successfully created!")
 
 

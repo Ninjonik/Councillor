@@ -107,6 +107,13 @@ async def createNewVoting(title, description, user, guild, voting_end_date, voti
     council_id = str(guild.id) + "_c"
 
     voting_type_data = voting_types[voting_type]
+
+    additionalText = ""
+
+    if status == "pending":
+        voting_type_data = voting_types["law_suggestions"]
+        additionalText = f"- {voting_types[voting_type]['text']}"
+
     color = discord.Colour(int(voting_type_data["color"], 16))
     embed = discord.Embed(title=title, description=description, color=color)
     embed.set_author(name=f"{user.name}#{user.discriminator}",
@@ -115,7 +122,8 @@ async def createNewVoting(title, description, user, guild, voting_end_date, voti
         return
     channel = guild.get_channel(config.VOTING_CHANNEL_ID)
     embed.set_footer(text=f"⏰ Voting end at: {voting_end_date.strftime('%d.%m.%Y, %H:%M:%S')} UTC+0")
-    embed.add_field(name="Type:", value=f"{voting_type_data['emoji']} {voting_type_data['text']}", inline=False)
+    embed.add_field(name="Type:", value=f"{voting_type_data['emoji']} {voting_type_data['text']} {additionalText}",
+                    inline=False)
     message = await channel.send(embed=embed)
     await message.add_reaction('✅')
     await message.add_reaction('❎')

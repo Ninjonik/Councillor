@@ -94,15 +94,18 @@ async def update_votings():
 
                 # If vote type is a law
                 if vote["type"] in presets.voting_types and vote["status"] == "voting":
+                    required_percentage = voting_type_data["required_percentage"]
                     passed = False
                     text = "**NOT** PASSED."
-                    voting_result = 0
+                    total_votes = len(vote["councillor_votes"])
+                    positive_votes = 0
+                    negative_votes = 0
                     for councillor_vote in vote["councillor_votes"]:
                         if councillor_vote["stance"]:
-                            voting_result += 1
+                            positive_votes += 1
                         else:
-                            voting_result -= 1
-                    if voting_result > 0:
+                            negative_votes += 1
+                    if (positive_votes / total_votes) > required_percentage:
                         passed = True
                         color = 0x00FF00
                         text = "**PASSED**."
@@ -111,7 +114,9 @@ async def update_votings():
                         # Send a law voting result informational embed
                         embed = discord.Embed(title=vote["title"], description=vote["description"], color=color)
                         embed.add_field(name="Result:", value=text, inline=False)
-                        embed.add_field(name="Vote sum:", value=f"**{voting_result}** (1 or more required to pass)",
+                        embed.add_field(name="Vote results:", value=f"For: {positive_votes} | Against: {negative_votes}"
+                                                                    f" - {required_percentage * 100}% "
+                                                                    f"required to pass",
                                         inline=False)
                         embed.set_footer(text=f"Originally proposed by: {vote['suggester']['name']}")
                         await channel.send(embed=embed)

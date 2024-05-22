@@ -132,7 +132,7 @@ async def createNewVoting(title, description, user, guild, voting_end_date, voti
     embed.set_footer(text=f"⏰ Voting end at: {voting_end_date.strftime('%d.%m.%Y, %H:%M:%S')} UTC+0")
     embed.add_field(name="Type:", value=f"{voting_type_data['emoji']} {voting_type_data['text']} {additional_text}",
                     inline=False)
-    message = await channel.send(embed=embed)
+    message = await channel.send(f"<@&{config.ROLE_COUNCILLOR_ID}>", embed=embed)
     await message.add_reaction('✅')
     await message.add_reaction('❎')
 

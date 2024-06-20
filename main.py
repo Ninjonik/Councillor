@@ -242,15 +242,20 @@ class Client(commands.Bot):
         else:
             return
 
-        # If not councillor role then you can't do anything c:
-        role_id = config.ROLE_COUNCILLOR_ID
-        if role_id:
-            role = guild.get_role(role_id)
-        else:
+        guild_data = presets.databases.get_document(
+            database_id=config.APPWRITE_DB_NAME,
+            collection_id='guilds',
+            document_id=str(guild.id),
+        )
+        if not guild_data or not guild_data["councillor_role_id"]:
             print("❌ Councillor role doesn't exist in this server.")
             await self.send_dm(member, "❌ Councillor role doesn't exist in this server.")
             await remove_reactions(message, member)
             return
+
+        # If there is no councillor role then you can't do anything c:
+        role_id = guild_data["councillor_role_id"]
+        role = guild.get_role(role_id)
 
         if role not in member.roles:
             print("❌ You're not a councillor in this server.")

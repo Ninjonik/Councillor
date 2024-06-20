@@ -161,8 +161,17 @@ class CouncilDialog(discord.ui.View):
                        custom_id="co_council_member", emoji="📋")
     async def councillor(self, interaction: discord.Interaction, button: discord.ui.Button):
 
+        guild_data = databases.get_document(
+            database_id=config.APPWRITE_DB_NAME,
+            collection_id='guilds',
+            document_id=str(interaction.guild.id),
+        )
+        if not guild_data or not guild_data["councillor_role_id"]:
+            await interaction.response.send_message(ephemeral=True, content="❌ Councillor role not set up!")
+            return
+
         member = interaction.user
-        councillor_role = interaction.guild.get_role(config.ROLE_COUNCILLOR_ID)
+        councillor_role = interaction.guild.get_role(guild_data["councillor_role_id"])
         if not councillor_role:
             await interaction.response.send_message(ephemeral=True, content="❌ Councillor role not set up!")
             return

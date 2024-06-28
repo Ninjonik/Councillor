@@ -48,7 +48,7 @@ async def update_votings():
 
         votes = votes["documents"]
 
-        guild_data = await presets.databases.get_document(config.APPWRITE_DB_NAME, "guilds", guild.id)
+        guild_data = await presets.databases.get_document(config.APPWRITE_DB_NAME, "guilds", str(guild.id))
 
         if guild_data["voting_channel_id"]:
             channel = guild.get_channel(guild_data["voting_channel_id"])

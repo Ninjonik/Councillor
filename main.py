@@ -48,8 +48,10 @@ async def update_votings():
 
         votes = votes["documents"]
 
-        if config.VOTING_CHANNEL_ID:
-            channel = guild.get_channel(config.VOTING_CHANNEL_ID)
+        guild_data = await presets.databases.get_document(config.APPWRITE_DB_NAME, "guilds", guild.id)
+
+        if guild_data["voting_channel_id"]:
+            channel = guild.get_channel(guild_data["voting_channel_id"])
 
         law_suggestion_winner = {}
         law_suggestion_most = -1
@@ -110,7 +112,7 @@ async def update_votings():
                         color = 0x00FF00
                         text = "**PASSED**."
 
-                    if config.VOTING_CHANNEL_ID:
+                    if guild_data["voting_channel_id"]:
                         # Send a law voting result informational embed
                         embed = discord.Embed(title=vote["title"], description=vote["description"], color=color)
                         embed.add_field(name="Result:", value=text, inline=False)
@@ -152,7 +154,7 @@ async def update_votings():
                 document_id=law_suggestion_winner["$id"],
             )
 
-            if not config.VOTING_CHANNEL_ID:
+            if not guild_data["voting_channel_id"]:
                 return
 
     print("See you in 24 hours from exactly now")

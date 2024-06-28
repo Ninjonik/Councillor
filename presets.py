@@ -113,6 +113,7 @@ voting_types = {
 
 async def createNewVoting(title, description, user, guild, voting_end_date, voting_type, status = "voting"):
     council_id = str(guild.id) + "_c"
+    guild_data = await databases.get_document(config.APPWRITE_DB_NAME, "guilds", guild.id)
 
     voting_type_data = voting_types[voting_type]
 
@@ -126,13 +127,13 @@ async def createNewVoting(title, description, user, guild, voting_end_date, voti
     embed = discord.Embed(title=title, description=description, color=color)
     embed.set_author(name=f"{user.name}#{user.discriminator}",
                      icon_url=user.avatar)
-    if not config.VOTING_CHANNEL_ID:
+    if not guild_data["voting_channel_id"]:
         return
-    channel = guild.get_channel(config.VOTING_CHANNEL_ID)
+    channel = guild.get_channel(guild_data["voting_channel_id"])
     embed.set_footer(text=f"⏰ Voting end at: {voting_end_date.strftime('%d.%m.%Y, %H:%M:%S')} UTC+0")
     embed.add_field(name="Type:", value=f"{voting_type_data['emoji']} {voting_type_data['text']} {additional_text}",
                     inline=False)
-    message = await channel.send(f"<@&{config.ROLE_COUNCILLOR_ID}>", embed=embed)
+    message = await channel.send(f"<@&{guild_data["councillor_role_id"]}>", embed=embed)
     await message.add_reaction('✅')
     await message.add_reaction('❎')
 

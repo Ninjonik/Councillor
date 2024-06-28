@@ -274,13 +274,16 @@ class Client(commands.Bot):
             await remove_reactions(message, member)
             return
 
+        print("USER ID:", payload.user_id)
+        print("MEMBER ID:", member.id)
+
         # Check if vote already exists for this user for this
         councillorVote = presets.databases.list_documents(
             database_id=config.APPWRITE_DB_NAME,
             collection_id='councillor_votes',
             queries=[
                 Query.equal('vote', voteData["$id"]),
-                Query.equal('councillor', payload.user_id),
+                Query.equal('councillor', str(payload.user_id)),
             ]
         )
 

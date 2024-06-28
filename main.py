@@ -280,7 +280,7 @@ class Client(commands.Bot):
             collection_id='councillor_votes',
             queries=[
                 Query.equal('vote', voteData["$id"]),
-                Query.equal('councillor.$id', payload.user_id),
+                Query.equal('councillor', payload.user_id),
             ]
         )
 

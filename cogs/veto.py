@@ -56,7 +56,7 @@ class Veto(commands.Cog):
                 }
             )
             print(updated_vote)
-            channel = interaction.guild.get_channel(guild_data["voting_channel_id"])
+            channel = interaction.guild.get_channel(int(guild_data["voting_channel_id"]))
             embed = discord.Embed(title=f"❌ {updated_vote['title']} vetoed!", color=0x00FF00)
             embed.add_field(name="Vetoed by:", value=interaction.user.name, inline=False)
             embed.add_field(name="Reason:", value=reason,inline=False)

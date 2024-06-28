@@ -51,7 +51,7 @@ async def update_votings():
         guild_data = presets.databases.get_document(config.APPWRITE_DB_NAME, "guilds", str(guild.id))
 
         if guild_data["voting_channel_id"]:
-            channel = guild.get_channel(guild_data["voting_channel_id"])
+            channel = guild.get_channel(int(guild_data["voting_channel_id"]))
 
         law_suggestion_winner = {}
         law_suggestion_most = -1
@@ -256,7 +256,7 @@ class Client(commands.Bot):
             return
 
         # If there is no councillor role then you can't do anything c:
-        role_id = guild_data["councillor_role_id"]
+        role_id = int(guild_data["councillor_role_id"])
         role = guild.get_role(role_id)
 
         if role not in member.roles:

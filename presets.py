@@ -129,7 +129,9 @@ async def createNewVoting(title, description, user, guild, voting_end_date, voti
                      icon_url=user.avatar)
     if not guild_data["voting_channel_id"]:
         return
+    print("GUILDDATA: ", guild_data)
     channel = guild.get_channel(guild_data["voting_channel_id"])
+    print("CHANNEL: ", channel.name)
     embed.set_footer(text=f"⏰ Voting end at: {voting_end_date.strftime('%d.%m.%Y, %H:%M:%S')} UTC+0")
     embed.add_field(name="Type:", value=f"{voting_type_data['emoji']} {voting_type_data['text']} {additional_text}",
                     inline=False)

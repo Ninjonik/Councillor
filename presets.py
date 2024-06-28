@@ -113,7 +113,7 @@ voting_types = {
 
 async def createNewVoting(title, description, user, guild, voting_end_date, voting_type, status = "voting"):
     council_id = str(guild.id) + "_c"
-    guild_data = await databases.get_document(config.APPWRITE_DB_NAME, "guilds", str(guild.id))
+    guild_data = databases.get_document(config.APPWRITE_DB_NAME, "guilds", str(guild.id))
 
     voting_type_data = voting_types[voting_type]
 

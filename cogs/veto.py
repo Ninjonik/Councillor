@@ -31,19 +31,16 @@ class Veto(commands.Cog):
             return
 
         is_eligible = False
-        for role in [guild_data["chancellor_role_id"], guild_data["president_role_id"],
-                     guild_data["vice_president_role_id"]]:
-            try:
-                role = interaction.user.get_role(role)
-                if role and role.id:
-                    is_eligible = True
-                    break
-            except:
-                pass
+        for role_id in [guild_data["chancellor_role_id"], guild_data["president_role_id"],
+                        guild_data["vice_president_role_id"]]:
+            role = interaction.guild.get_role(int(role_id))
+            if role in interaction.user.roles:
+                is_eligible = True
+                break
 
         if not is_eligible:
             await interaction.response.send_message("❌ You are not President/Vice-President"
-                                                                      "/Chancellor to veto the law.")
+                                                    "/Chancellor to veto the law.")
             return
 
         try:
@@ -57,9 +54,9 @@ class Veto(commands.Cog):
             )
             print(updated_vote)
             channel = interaction.guild.get_channel(int(guild_data["voting_channel_id"]))
-            embed = discord.Embed(title=f"❌ {updated_vote['title']} vetoed!", color=0x00FF00)
+            embed = discord.Embed(title=f"❌ {updated_vote['title']} vetoed!", color=0xFF0000)
             embed.add_field(name="Vetoed by:", value=interaction.user.name, inline=False)
-            embed.add_field(name="Reason:", value=reason,inline=False)
+            embed.add_field(name="Reason:", value=reason, inline=False)
             embed.set_footer(text=f"Vote originally proposed by: {updated_vote['suggester']['name']}")
             await channel.send(embed=embed)
             await interaction.response.send_message("✅ Law successfully vetoed.")

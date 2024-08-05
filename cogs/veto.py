@@ -27,7 +27,7 @@ class Veto(commands.Cog):
         if not guild_data or not guild_data["voting_channel_id"] or not guild_data["chancellor_role_id"] \
                 or not guild_data["president_role_id"] or not guild_data["vice_president_role_id"]:
             print("❌ Higher roles don't exist in this server or there is no voting channel set.")
-            await interaction.response.send_message(interaction.user, "❌ Higher roles don't exist in this server.")
+            await interaction.response.send_message("❌ Higher roles don't exist in this server.")
             return
 
         is_eligible = False
@@ -42,7 +42,7 @@ class Veto(commands.Cog):
                 pass
 
         if not is_eligible:
-            await interaction.response.send_message(interaction.user, "❌ You are not President/Vice-President"
+            await interaction.response.send_message("❌ You are not President/Vice-President"
                                                                       "/Chancellor to veto the law.")
             return
 
@@ -62,9 +62,9 @@ class Veto(commands.Cog):
             embed.add_field(name="Reason:", value=reason,inline=False)
             embed.set_footer(text=f"Vote originally proposed by: {updated_vote['suggester']['name']}")
             await channel.send(embed=embed)
-            await interaction.response.send_message(interaction.user, "✅ Law successfully vetoed.")
+            await interaction.response.send_message("✅ Law successfully vetoed.")
         except:
-            await interaction.response.send_message(interaction.user, "❌ Law with this ID does not exist.")
+            await interaction.response.send_message("❌ Law with this ID does not exist.")
             return
 
 

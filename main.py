@@ -42,7 +42,7 @@ async def update_votings():
             database_id=config.APPWRITE_DB_NAME,
             collection_id='votes',
             queries=[
-                Query.equal('council', str(guild.id) + "_c")
+                Query.equal('council.$id', str(guild.id) + "_c")
             ]
         )
 

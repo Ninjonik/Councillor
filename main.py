@@ -277,6 +277,9 @@ class Client(commands.Bot):
         print("USER ID:", payload.user_id)
         print("MEMBER ID:", member.id)
 
+        print(voteData["$id"])
+        print(str(payload.user_id))
+
         # Check if vote already exists for this user for this
         councillorVote = presets.databases.list_documents(
             database_id=config.APPWRITE_DB_NAME,

@@ -42,7 +42,7 @@ async def update_votings():
             database_id=config.APPWRITE_DB_NAME,
             collection_id='votes',
             queries=[
-                Query.equal('council.$id', str(guild.id) + "_c")
+                Query.equal('council', str(guild.id) + "_c")
             ]
         )
 
@@ -282,8 +282,8 @@ class Client(commands.Bot):
             database_id=config.APPWRITE_DB_NAME,
             collection_id='councillor_votes',
             queries=[
-                Query.equal('vote.$id', voteData["$id"]),
-                Query.equal('councillor.$id', str(payload.user_id)),
+                Query.equal('vote', voteData["$id"]),
+                Query.equal('councillor', str(payload.user_id)),
             ]
         )
 

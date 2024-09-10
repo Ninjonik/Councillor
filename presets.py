@@ -129,6 +129,7 @@ async def createNewVoting(title, description, user, guild: discord.Guild, voting
                      icon_url=user.avatar)
     if not guild_data["voting_channel_id"]:
         return
+
     print("GUILDDATA: ", guild_data)
     channel = guild.get_channel(int(guild_data["voting_channel_id"]))
     print("CHANNEL: ", channel.name)
@@ -139,7 +140,7 @@ async def createNewVoting(title, description, user, guild: discord.Guild, voting
     await message.add_reaction('✅')
     await message.add_reaction('❎')
 
-    databases.create_document(
+    new_voting = databases.create_document(
         database_id=config.APPWRITE_DB_NAME,
         collection_id='votes',
         document_id=ID.unique(),
@@ -154,6 +155,10 @@ async def createNewVoting(title, description, user, guild: discord.Guild, voting
             "description": description,
         }
     )
+
+    embed.set_footer(text=f"⏰ Voting end at: {voting_end_date.strftime('%d.%m.%Y, %H:%M:%S')} UTC+0 | "
+                          f"ID: {new_voting['$id']}")
+    await message.edit(embed=embed)
 
 
 class CouncilDialog(discord.ui.View):

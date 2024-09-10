@@ -16,7 +16,7 @@ class Veto(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
 
-    @app_commands.command(name='veto', description="Emergency power that can be used to veto any law being currently "
+    @app_commands.command(name='veto', description="An emergency power that can be used to veto any law being currently "
                                                    "voted on.")
     async def veto(self, interaction: discord.Interaction, law_id: str, reason: str):
         guild_data = presets.databases.get_document(
@@ -44,7 +44,7 @@ class Veto(commands.Cog):
             return
 
         try:
-            updated_vote = presets.databases.update_document(
+            presets.databases.update_document(
                 database_id=config.APPWRITE_DB_NAME,
                 collection_id="votes",
                 document_id=law_id,
@@ -52,7 +52,13 @@ class Veto(commands.Cog):
                     "status": "vetoed",
                 }
             )
-            print(updated_vote)
+
+            updated_vote = presets.databases.get_document(
+                database_id=config.APPWRITE_DB_NAME,
+                collection_id="votes",
+                document_id=law_id,
+            )
+
             channel = interaction.guild.get_channel(int(guild_data["voting_channel_id"]))
             embed = discord.Embed(title=f"❌ {updated_vote['title']} vetoed!", color=0xFF0000)
             embed.add_field(name="Vetoed by:", value=interaction.user.name, inline=False)
@@ -60,7 +66,7 @@ class Veto(commands.Cog):
             embed.set_footer(text=f"Vote originally proposed by: {updated_vote['suggester']['name']}")
             await channel.send(embed=embed)
             await interaction.response.send_message("✅ Law successfully vetoed.")
-        except:
+        except Exception as e:
             await interaction.response.send_message("❌ Law with this ID does not exist.")
             return
 

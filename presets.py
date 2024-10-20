@@ -104,6 +104,19 @@ def datetime_now():
     return datetime.datetime.now(datetime.UTC)
 
 
+def convert_datetime_from_str(datetime_str: None | str) -> None | datetime.datetime:
+    formats = ["%d.%m.%Y %H:%M", "%d-%m-%Y %H:%M", "%d/%m/%Y %H:%M"]
+    for fmt in formats:
+        try:
+            datetime_obj = datetime.datetime.strptime(datetime_str, fmt)
+            datetime_obj.replace(tzinfo=datetime.timezone.utc)
+            return datetime_obj
+        except ValueError:
+            pass
+    else:
+        return None
+
+
 async def is_eligible(user: discord.Member, guild: discord.Guild, role: ROLE) -> bool:
     guild_data = databases.get_document(
         database_id=config.APPWRITE_DB_NAME,
@@ -431,7 +444,6 @@ class VotingDialog(discord.ui.View):
                                                            "Chancellor to veto this vote.", ephemeral=True)
         await interaction.response.send_modal(VetoReason())
 
-
     async def on_error(self, interaction, error, item):
         if isinstance(error, commands.MissingRequiredArgument):
             await interaction.response.send_message(content=f"'{error.param.name}' is a required argument.")
@@ -470,6 +482,27 @@ class VetoReason(discord.ui.Modal, title='Veto'):
             await interaction.response.send_message("❌ Legislation with this ID does not exist.", ephemeral=True)
             return
 
-
     async def on_error(self, interaction: discord.Interaction, error):
         await interaction.response.send_message('There was an error while processing the request.', ephemeral=True)
+
+
+class ElectionsAnnouncement(discord.ui.View):
+    def __init__(self, client):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(style=discord.ButtonStyle.success,
+                       custom_id="ea_register", emoji="🗳️", label="Register to vote")
+    async def ea_register(self, interaction: discord.Interaction, button: discord.ui.Button):
+        pass
+
+    @discord.ui.button(style=discord.ButtonStyle.danger,
+                       custom_id="ea_candidate", emoji="🚀", label="Candidate")
+    async def ea_candidate(self, interaction: discord.Interaction, button: discord.ui.Button):
+        pass
+
+    async def on_error(self, interaction, error, item):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await interaction.response.send_message(content=f"'{error.param.name}' is a required argument.")
+        else:
+            print(f'Ignoring exception in ElectionsAnnouncement:', file=sys.stderr)
+            traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)

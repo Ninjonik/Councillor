@@ -1,7 +1,10 @@
 import datetime
 import discord
+from appwrite.query import Query
 from discord.ext import commands
 from discord import app_commands
+
+import config
 import presets
 
 
@@ -31,6 +34,7 @@ class Elections(commands.Cog):
             return
 
         action = action.value
+        council_id = str(interaction.guild.id) + "_c"
 
         # Handle and convert the datetime
         start_datetime = presets.convert_datetime_from_str(start)
@@ -67,9 +71,37 @@ class Elections(commands.Cog):
 
             embed.set_thumbnail(url="https://www.murfreesborotn.gov/ImageRepository/Document?documentID=14095")
             embed.set_footer(icon_url="https://slate.dan.onl/slate.png")
-            await announcement_channel.send(content="@everyone" if ping_everyone else None, embed=embed,
+            message = await announcement_channel.send(content="@everyone" if ping_everyone else None, embed=embed,
                                             view=presets.ElectionsAnnouncement(self.client))
 
+            # Find if there is an already existing election for this council
+            check_res = presets.databases.list_documents(
+                database_id=config.APPWRITE_DB_NAME,
+                collection_id="votings",
+                queries=[
+                    Query.equal("status", "pending"),
+                    Query.equal("council", council_id),
+                ]
+            )
+            if check_res["total"] > 0:
+                return await interaction.response.send_message(ephemeral=True,
+                                                        content="❌ There is already an election that is pending.")
+
+            presets.databases.create_document(
+                database_id=config.APPWRITE_DB_NAME,
+                collection_id='votings',
+                document_id=str(message.id),
+                data={
+                    "type": "election",
+                    'status': "pending",
+                    "voting_end": str(end_datetime),
+                    "voting_start": str(start_datetime),
+                    "message_id": str(message.id),
+                    "title": "Elections Announcement",
+                    "council": council_id,
+                    "proposer": str(interaction.user.id),
+                }
+            )
             await interaction.response.send_message("✅ Elections successfully announced!")
 
 

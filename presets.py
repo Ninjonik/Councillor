@@ -490,15 +490,37 @@ class ElectionsAnnouncement(discord.ui.View):
     def __init__(self, client):
         super().__init__(timeout=None)
 
+    async def handle_register(self, interaction: discord.Interaction, candidate: bool):
+        election_id = str(interaction.message.id)
+        user_id = str(interaction.user.id)
+
+        # check if already registered in this election
+        db_check = databases.list_documents(database_id=config.APPWRITE_DB_NAME, collection_id="registered", queries=[
+            Query.equal("election", election_id),
+            Query.equal("discord_id", user_id)
+        ])
+
+        if db_check["total"] > 0:
+            return await interaction.response.send_message("❌ You have already registered to vote/candidate in this "
+                                                           "election..", ephemeral=True)
+        databases.create_document(database_id=config.APPWRITE_DB_NAME, collection_id="registered",
+                                  document_id=ID.unique(),
+                                  data={"name": interaction.user.name, "candidate": candidate,
+                                        "election": election_id, "discord_id": user_id
+                                        })
+        return await interaction.response.send_message(f"✅ Successfuly registered to "
+                                                       f"{'candidate' if candidate else 'vote'} in this election.",
+                                                       ephemeral=True)
+
     @discord.ui.button(style=discord.ButtonStyle.success,
                        custom_id="ea_register", emoji="🗳️", label="Register to vote")
     async def ea_register(self, interaction: discord.Interaction, button: discord.ui.Button):
-        pass
+        return await self.handle_register(interaction, False)
 
     @discord.ui.button(style=discord.ButtonStyle.danger,
                        custom_id="ea_candidate", emoji="🚀", label="Candidate")
     async def ea_candidate(self, interaction: discord.Interaction, button: discord.ui.Button):
-        pass
+        return await self.handle_register(interaction, True)
 
     async def on_error(self, interaction, error, item):
         if isinstance(error, commands.MissingRequiredArgument):

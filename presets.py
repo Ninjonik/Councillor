@@ -100,6 +100,11 @@ voting_types = {
 ROLE = Literal["councillor", "chancellor", "judiciary", "president", "vice_president"]
 
 
+def generate_keycap_emoji(number):
+    keycap_emoji_list = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣']
+    return keycap_emoji_list[number - 1]
+
+
 def datetime_now():
     return datetime.datetime.now(datetime.UTC)
 
@@ -528,3 +533,84 @@ class ElectionsAnnouncement(discord.ui.View):
         else:
             print(f'Ignoring exception in ElectionsAnnouncement:', file=sys.stderr)
             traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+
+
+class ElectionsVoting(discord.ui.View):
+    def __init__(self, client, candidates):
+        super().__init__(timeout=None)
+        self.client = client
+        self.candidates = candidates
+
+    async def handle_vote(self, interaction: discord.Interaction, candidate_index: int):
+        candidate = self.candidates[candidate_index]
+
+        # Check if eligible for voting
+        eligible_check = databases.list_documents(database_id=config.APPWRITE_DB_NAME, collection_id="registered",
+                                                  queries=[
+                                                      Query.equal("election", candidate["election"]["$id"]),
+                                                      Query.equal("discord_id", str(interaction.user.id))
+                                                  ])
+
+        if eligible_check["total"] < 1:
+            await interaction.response.send_message(f"❌ Unfortunately you cannot vote in this election, "
+                                                    f"you need to register for voting before the next "
+                                                    f"election in order to vote.")
+
+        if eligible_check["documents"][0]["votes"] == -1:
+            await interaction.response.send_message(f"❌ You have already voted in this election, "
+                                                    f"unfortunately it's not possible to change your vote.")
+
+        if eligible_check["documents"][0]["candidate"]:
+            await interaction.response.send_message(f"❌ As a candidate you cannot cast your vote.")
+
+        candidate_db = databases.get_document(
+            database_id=config.APPWRITE_DB_NAME,
+            collection_id="registered",
+            document_id=candidate["$id"],
+        )
+        if not candidate_db:
+            await interaction.response.send_message(f"❌ Unable to fetch database data, please contact administrator.")
+
+        new_votes = (candidate_db["votes"] or 0) + 1
+        databases.update_document(
+            database_id=config.APPWRITE_DB_NAME,
+            collection_id="registered",
+            document_id=candidate_db["$id"],
+            data={"votes": new_votes, "election": candidate["election"]["$id"]}
+        )
+
+        databases.update_document(database_id=config.APPWRITE_DB_NAME, collection_id="registered",
+                                  document_id=eligible_check["documents"][0]["$id"],
+                                  data={"votes": -1, "election": candidate["election"]["$id"]})
+
+        await interaction.response.send_message(
+            f"✅ You have successfully voted for {candidate['name']}!", ephemeral=True)
+
+
+    def generate_buttons(self):
+        buttons = []
+        for i, candidate in enumerate(self.candidates):
+            if candidate:
+                button = discord.ui.Button(
+                    style=discord.ButtonStyle.primary,
+                    custom_id=f"vote_{i}",
+                    emoji=generate_keycap_emoji(i + 1)
+                )
+                button.callback = lambda interaction: self.handle_vote(interaction, i)
+                buttons.append(button)
+            else:
+                print(f"❌ Warning: Empty candidate name at index {i}")
+
+        return buttons
+
+    async def on_interaction(self, interaction: discord.Interaction, button: discord.Button):
+        custom_id = interaction.data['custom_id']
+        await self.handle_vote(interaction, int(custom_id.split('_')[1]))
+
+    async def on_error(self, interaction, error, item):
+        print(f"Ignoring exception in ElectionsVoting:", file=sys.stderr)
+        traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+        if isinstance(error, commands.MissingRequiredArgument):
+            await interaction.response.send_message(content=f"'{error.param.name}' is a required argument.")
+        else:
+            await interaction.response.send_message(f"An error occurred: {str(error)}")

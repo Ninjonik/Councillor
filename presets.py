@@ -420,7 +420,7 @@ class VotingDialog(discord.ui.View):
             )
 
             await interaction.response.send_message(
-                f"- Your vote ({"✅" if stance else "❌"}) has been successfully casted!", ephemeral=True)
+                f"- Your vote ({'✅' if stance else '❌'}) has been successfully casted!", ephemeral=True)
             print(f"New vote added: {stance} by {member.name} on {voting_data['$id']}")
 
         except Exception as e:

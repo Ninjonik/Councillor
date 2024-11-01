@@ -1,8 +1,10 @@
 import datetime
+
 import discord
+from appwrite.id import ID
 from appwrite.query import Query
-from discord.ext import commands
 from discord import app_commands
+from discord.ext import commands
 
 import config
 import presets
@@ -15,8 +17,8 @@ class Elections(commands.Cog):
     @app_commands.command(name='elections', description="Handling of Elections")
     @app_commands.choices(action=[
         app_commands.Choice(name="Announce an Election", value="announce"),
-        app_commands.Choice(name="Start an Election", value="start"),
-        app_commands.Choice(name="Announce Election Results", value="results"),
+        app_commands.Choice(name="Start the Election", value="start"),
+        app_commands.Choice(name="Conclude the Election", value="conclude"),
     ])
     @app_commands.describe(
         start="Example: Day.Month.Year Hours:Minutes, (UTC), Example: 24.12.2025 23:56",
@@ -24,7 +26,7 @@ class Elections(commands.Cog):
     )
     async def elections(self, interaction: discord.Interaction, action: app_commands.Choice[str], start: str = None,
                         end: str = None,
-                        limit: int = -1, announcement_channel: discord.TextChannel = None, ping_everyone: bool = False):
+                        limit: int = 4, announcement_channel: discord.TextChannel = None, ping_everyone: bool = False):
         eligible = (await presets.is_eligible(interaction.user, interaction.guild, "president")
                     or await presets.is_eligible(interaction.user, interaction.guild, "vice_president"))
 
@@ -60,7 +62,6 @@ class Elections(commands.Cog):
                 return await interaction.response.send_message(ephemeral=True,
                                                                content="❌ There is already an election that is pending.")
 
-            limit = limit if limit != -1 else 4
             embed = discord.Embed(title="📢Elections Announcement!",
                                   description="🎉 Election Alert! 🎉\n\nAttention citizens of "
                                               f"{interaction.guild.name}!\n\nElection day for {limit} councillors of"
@@ -90,7 +91,7 @@ class Elections(commands.Cog):
             embed.set_thumbnail(url="https://www.murfreesborotn.gov/ImageRepository/Document?documentID=14095")
             embed.set_footer(icon_url="https://slate.dan.onl/slate.png")
             message = await announcement_channel.send(content="@everyone" if ping_everyone else None, embed=embed,
-                                            view=presets.ElectionsAnnouncement(self.client))
+                                                      view=presets.ElectionsAnnouncement(self.client))
 
             presets.databases.create_document(
                 database_id=config.APPWRITE_DB_NAME,
@@ -147,7 +148,7 @@ class Elections(commands.Cog):
 
             embed = discord.Embed(title="🗳️Elections Starting!",
                                   description="🎉 Election Alert! "
-                                              "🎉\n\nAttention citizens of {interaction.guild.name}!\n\n"
+                                              f"🎉\n\nAttention citizens of {interaction.guild.name}!\n\n"
                                               "Election day for new councillors of the Grand Council is starting now!"
                                               "✨\nPlease note that you are able to only vote for one councillor."
                                               "\n\n**Election Duration:**\n📅 "
@@ -175,7 +176,134 @@ class Elections(commands.Cog):
             message = await announcement_channel.send(content="@everyone" if ping_everyone else None, embed=embed,
                                                       view=view)
 
+            presets.databases.update_document(
+                database_id=config.APPWRITE_DB_NAME,
+                collection_id='votings',
+                document_id=str(election['$id']),
+                data={
+                    "status": "ongoing",
+                    "message_id": str(message.id),
+                    "proposer": None,
+                    "council": election["council"]["$id"],
+                }
+            )
+
             await interaction.response.send_message("✅ Elections successfully started!", ephemeral=True)
+
+        if action == "conclude":
+            election_query = presets.databases.list_documents(
+                database_id=config.APPWRITE_DB_NAME,
+                collection_id="votings",
+                queries=[
+                    Query.equal("status", "ongoing"),
+                    Query.equal("council", council_id),
+                    Query.order_desc("$updatedAt"),
+                    Query.limit(1)
+                ]
+            )
+            if election_query["total"] != 1:
+                return await interaction.response.send_message(ephemeral=True,
+                                                               content="❌ There is no valid election to conclude.")
+
+            election = election_query["documents"][0]
+            winners_query = presets.databases.list_documents(
+                database_id=config.APPWRITE_DB_NAME,
+                collection_id="registered",
+                queries=[
+                    Query.equal("election", election["$id"]),
+                    Query.equal("candidate", True),
+                    Query.order_desc("votes"),
+                    Query.limit(limit),
+                ]
+            )
+            winners = winners_query["documents"]
+
+            embed = discord.Embed(title="🙋‍♂️️ Elections Results!",
+                                  description="🎉 Election Alert! "
+                                              f"🎉\n\nAttention citizens of {interaction.guild.name}!\n\n"
+                                              "Election for the new members of the Grand Council has been concluded!"
+                                              "✨\nWinners of the election:",
+                                  colour=0x00b0f4,
+                                  timestamp=presets.datetime_now())
+            embed.set_author(name="Democracy Announcement")
+
+            for i in range(len(winners)):
+                emoji = presets.generate_keycap_emoji(i + 1)
+                embed.add_field(name=f"{emoji} - {winners[i]['name']} - {winners[i]['votes']} votes",
+                                value="",
+                                inline=False)
+
+            embed.set_image(
+                url="https://www.rocklin.ca.us/sites/main/files/imagecache/lightbox/main-images/election_results.png")
+
+            message = await announcement_channel.send(content="@everyone" if ping_everyone else None, embed=embed)
+
+            presets.databases.update_document(
+                database_id=config.APPWRITE_DB_NAME,
+                collection_id='votings',
+                document_id=str(election['$id']),
+                data={
+                    "status": "concluded",
+                    "message_id": str(message.id),
+                    "proposer": None,
+                    "council": election["council"]["$id"],
+                }
+            )
+
+            guild_data = presets.get_guild_data(interaction.guild.id)
+            councillor_role = interaction.guild.get_role(int(guild_data["councillor_role_id"]))
+            chancellor_role = interaction.guild.get_role(int(guild_data["chancellor_role_id"]))
+
+            # Clean up old councillors
+            to_delete = []
+            # If the limit is more than 4 then it is not a regular election, but an election to fill spots
+            if limit <= 4:
+                to_delete_query = presets.databases.list_documents(
+                    database_id=config.APPWRITE_DB_NAME,
+                    collection_id="councillors",
+                    queries=[
+                        Query.equal("council", election["council"]["$id"]),
+                        Query.limit(len(winners)),
+                        Query.order_asc("$createdAt")
+                    ]
+                )
+                to_delete = to_delete_query["documents"]
+                print(to_delete_query)
+                print(to_delete)
+
+            for old_councillor in to_delete:
+                presets.databases.delete_document(
+                    database_id=config.APPWRITE_DB_NAME,
+                    collection_id="councillors",
+                    document_id=str(old_councillor["$id"]),
+                )
+                old_councillor_user = interaction.guild.get_member(int(old_councillor["discord_id"]))
+                try:
+                    await old_councillor_user.remove_roles(councillor_role, reason="Term ended.")
+                except Exception as e:
+                    pass
+                try:
+                    await old_councillor_user.remove_roles(chancellor_role, reason="Term ended.")
+                except Exception as e:
+                    pass
+
+            # Add new councillors
+            for winner in winners:
+                presets.databases.create_document(
+                    database_id=config.APPWRITE_DB_NAME,
+                    collection_id='councillors',
+                    document_id=ID.unique(),
+                    data={
+                        "name": winner["name"],
+                        "discord_id": winner["discord_id"],
+                        "council": election["council"]["$id"],
+                        "proposed": [],
+                    }
+                )
+                winner_user = interaction.guild.get_member(int(winner["discord_id"]))
+                await winner_user.add_roles(councillor_role, reason="Term started.")
+
+            await interaction.response.send_message("✅ Elections successfully concluded!", ephemeral=True)
 
 
 async def setup(client: commands.Bot) -> None:

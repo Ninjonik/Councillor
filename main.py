@@ -62,7 +62,7 @@ async def update_votings():
         votings = votings["documents"]
         print(f"Votings for {guild.id}: {len(votings)}, {votings}")
 
-        guild_data = await presets.get_guild_data(guild.id)
+        guild_data = presets.get_guild_data(guild.id)
 
         channel = None
 

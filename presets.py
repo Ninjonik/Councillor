@@ -144,7 +144,7 @@ async def is_eligible(user: discord.Member, guild: discord.Guild, role: ROLE) ->
 async def create_new_voting(bot_client: discord.Client, title, description, user, guild: discord.Guild, voting_type,
                             status="voting", voting_end_date=None):
     council_id = str(guild.id) + "_c"
-    guild_data = await get_guild_data(guild.id)
+    guild_data = get_guild_data(guild.id)
 
     voting_type_data = voting_types[voting_type]
 
@@ -194,7 +194,7 @@ async def create_new_voting(bot_client: discord.Client, title, description, user
     await message.edit(embed=embed)
 
 
-async def get_guild_data(guild_id: int | str):
+def get_guild_data(guild_id: int | str):
     return databases.get_document(
         database_id=config.APPWRITE_DB_NAME,
         collection_id="guilds",
@@ -471,7 +471,7 @@ class VetoReason(discord.ui.Modal, title='Veto'):
             )
             print(updated_voting)
 
-            guild_data = await get_guild_data(interaction.guild.id)
+            guild_data = get_guild_data(interaction.guild.id)
 
             channel = interaction.guild.get_channel(int(guild_data["voting_channel_id"]))
             embed = discord.Embed(title=f"❌ {updated_voting['title']} vetoed!", color=0xFF0000)
@@ -552,16 +552,18 @@ class ElectionsVoting(discord.ui.View):
                                                   ])
 
         if eligible_check["total"] < 1:
-            await interaction.response.send_message(f"❌ Unfortunately you cannot vote in this election, "
-                                                    f"you need to register for voting before the next "
-                                                    f"election in order to vote.")
+            return await interaction.response.send_message(f"❌ Unfortunately you cannot vote in this election, "
+                                                           f"you need to register for voting before the next "
+                                                           f"election in order to vote.", ephemeral=True)
 
         if eligible_check["documents"][0]["votes"] == -1:
-            await interaction.response.send_message(f"❌ You have already voted in this election, "
-                                                    f"unfortunately it's not possible to change your vote.")
+            return await interaction.response.send_message(f"❌ You have already voted in this election, "
+                                                           f"unfortunately it's not possible to change your vote.",
+                                                           ephemeral=True)
 
         if eligible_check["documents"][0]["candidate"]:
-            await interaction.response.send_message(f"❌ As a candidate you cannot cast your vote.")
+            return await interaction.response.send_message(f"❌ As a candidate you cannot cast your vote.",
+                                                           ephemeral=True)
 
         candidate_db = databases.get_document(
             database_id=config.APPWRITE_DB_NAME,
@@ -569,7 +571,8 @@ class ElectionsVoting(discord.ui.View):
             document_id=candidate["$id"],
         )
         if not candidate_db:
-            await interaction.response.send_message(f"❌ Unable to fetch database data, please contact administrator.")
+            return await interaction.response.send_message(
+                f"❌ Unable to fetch database data, please contact administrator.", ephemeral=True)
 
         new_votes = (candidate_db["votes"] or 0) + 1
         databases.update_document(
@@ -585,7 +588,6 @@ class ElectionsVoting(discord.ui.View):
 
         await interaction.response.send_message(
             f"✅ You have successfully voted for {candidate['name']}!", ephemeral=True)
-
 
     def generate_buttons(self):
         buttons = []

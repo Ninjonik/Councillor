@@ -541,7 +541,9 @@ class ElectionsVoting(discord.ui.View):
         self.client = client
         self.candidates = candidates
 
-    async def handle_vote(self, interaction: discord.Interaction, candidate_index: int):
+    async def handle_vote(self, interaction: discord.Interaction):
+        custom_id = interaction.data['custom_id']
+        candidate_index = int(custom_id.split('_')[1])
         candidate = self.candidates[candidate_index]
 
         # Check if eligible for voting
@@ -592,22 +594,24 @@ class ElectionsVoting(discord.ui.View):
     def generate_buttons(self):
         buttons = []
         for i, candidate in enumerate(self.candidates):
+            print(f"vote_{i}")
             if candidate:
                 button = discord.ui.Button(
                     style=discord.ButtonStyle.primary,
                     custom_id=f"vote_{i}",
-                    emoji=generate_keycap_emoji(i + 1)
+                    emoji=generate_keycap_emoji(i + 1),
                 )
-                button.callback = lambda interaction: self.handle_vote(interaction, i)
+                button.callback = lambda interaction: self.handle_vote(interaction)
                 buttons.append(button)
             else:
                 print(f"❌ Warning: Empty candidate name at index {i}")
 
+        print("BUTTONS:", buttons)
         return buttons
 
     async def on_interaction(self, interaction: discord.Interaction, button: discord.Button):
         custom_id = interaction.data['custom_id']
-        await self.handle_vote(interaction, int(custom_id.split('_')[1]))
+        await self.handle_vote(interaction)
 
     async def on_error(self, interaction, error, item):
         print(f"Ignoring exception in ElectionsVoting:", file=sys.stderr)

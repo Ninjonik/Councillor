@@ -190,7 +190,6 @@ class Elections(commands.Cog):
 
             await interaction.response.send_message("✅ Elections successfully started!", ephemeral=True)
 
-        print(action)
         if action == "conclude":
             election_query = presets.databases.list_documents(
                 database_id=config.APPWRITE_DB_NAME,

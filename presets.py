@@ -304,7 +304,7 @@ class CouncilDialog(discord.ui.View):
                     document_id=f'{str(interaction.user.id)}',
                     data={
                         'councils': [
-                            *councillor_data["documents"][0]["councils"],
+                            councillor_data["documents"][0]["councils"],
                             f"{str(interaction.guild.id)}_c"
                         ]
                     }

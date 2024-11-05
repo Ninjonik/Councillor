@@ -62,7 +62,10 @@ async def update_votings():
         votings = votings["documents"]
         print(f"Votings for {guild.id}: {len(votings)}, {votings}")
 
-        guild_data = presets.get_guild_data(guild.id)
+        try:
+            guild_data = presets.get_guild_data(guild.id)
+        except Exception as e:
+            continue
 
         channel = None
 

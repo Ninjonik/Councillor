@@ -49,20 +49,20 @@ async def update_votings():
     )
 
     for guild in client.guilds:
-        votings = presets.databases.list_documents(
-            database_id=config.APPWRITE_DB_NAME,
-            collection_id='votings',
-            queries=[
-                Query.equal('council', str(guild.id) + "_c"),
-                Query.equal('status', 'voting'),
-                Query.less_than_equal("voting_end", current_datetime.isoformat()),
-            ]
-        )
-
-        votings = votings["documents"]
-        print(f"Votings for {guild.id}: {len(votings)}, {votings}")
-
         try:
+            votings = presets.databases.list_documents(
+                database_id=config.APPWRITE_DB_NAME,
+                collection_id='votings',
+                queries=[
+                    Query.equal('status', 'voting'),
+                    Query.equal('council', str(guild.id) + "_c"),
+                    Query.less_than_equal("voting_end", current_datetime.isoformat()),
+                ]
+            )
+
+            votings = votings["documents"]
+            print(f"Votings for {guild.id}: {len(votings)}, {votings}")
+
             guild_data = presets.get_guild_data(guild.id)
         except Exception as e:
             continue

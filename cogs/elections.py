@@ -93,6 +93,10 @@ class Elections(commands.Cog):
             message = await announcement_channel.send(content="@everyone" if ping_everyone else None, embed=embed,
                                                       view=presets.ElectionsAnnouncement(self.client))
 
+            councillor_data = await presets.get_councillor_data(interaction.user.id, interaction.guild.id)
+            if not councillor_data:
+                await interaction.response.send_message("❌ Councillor not found.", ephemeral=True)
+
             presets.databases.create_document(
                 database_id=config.APPWRITE_DB_NAME,
                 collection_id='votings',
@@ -105,7 +109,7 @@ class Elections(commands.Cog):
                     "message_id": str(message.id),
                     "title": "Elections Announcement",
                     "council": council_id,
-                    "proposer": str(interaction.user.id),
+                    "proposer": councillor_data["$id"],
                 }
             )
             await interaction.response.send_message("✅ Elections successfully announced!", ephemeral=True)

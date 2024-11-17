@@ -122,6 +122,22 @@ def convert_datetime_from_str(datetime_str: None | str) -> None | datetime.datet
         return None
 
 
+async def get_councillor_data(discord_id: int, guild_id: int):
+    councillor_data = databases.list_documents(
+        database_id=config.APPWRITE_DB_NAME,
+        collection_id='councillors',
+        queries=[
+            Query.equal("discord_id", str(discord_id)),
+            Query.equal("council", str(guild_id) + "_c"),
+        ]
+    )
+
+    if not councillor_data or len(councillor_data["documents"]) == 0:
+        return None
+
+    return councillor_data["documents"][0]
+
+
 async def is_eligible(user: discord.Member, guild: discord.Guild, role: ROLE) -> bool:
     guild_data = databases.get_document(
         database_id=config.APPWRITE_DB_NAME,
@@ -173,6 +189,10 @@ async def create_new_voting(bot_client: discord.Client, title, description, user
                     inline=False)
     message = await channel.send(f"<@&{guild_data['councillor_role_id']}>", embed=embed, view=VotingDialog(bot_client))
 
+    councillor_data = await get_councillor_data(user.id, guild.id)
+    if not councillor_data:
+        return
+
     new_voting = databases.create_document(
         database_id=config.APPWRITE_DB_NAME,
         collection_id='votings',
@@ -185,7 +205,7 @@ async def create_new_voting(bot_client: discord.Client, title, description, user
             "title": title,
             "description": description,
             "council": council_id,
-            "proposer": str(user.id),
+            "proposer": councillor_data["$id"],
         }
     )
 
@@ -379,6 +399,10 @@ class VotingDialog(discord.ui.View):
                 return await interaction.response.send_message("❌ You're not a councillor in this server.",
                                                                ephemeral=True)
 
+            councillor_data = await get_councillor_data(interaction.user.id, interaction.guild.id)
+            if not councillor_data:
+                await interaction.response.send_message("❌ Councillor not found.", ephemeral=True)
+
             # Convert voting end date to UTC
             voting_end_date_str = voting_data['voting_end']
             voting_end_date = datetime.datetime.fromisoformat(voting_end_date_str)
@@ -395,7 +419,7 @@ class VotingDialog(discord.ui.View):
                 collection_id='votes',
                 queries=[
                     Query.equal('voting', voting_data["$id"]),
-                    Query.equal('councillor', str(member.id))
+                    Query.equal('councillor', councillor_data["$id"])
                 ]
             )
 
@@ -413,7 +437,7 @@ class VotingDialog(discord.ui.View):
                 collection_id='votes',
                 document_id=ID.unique(),
                 data={
-                    "councillor": str(member.id),
+                    "councillor": councillor_data["$id"],
                     "voting": voting_data["$id"],
                     "stance": stance
                 }
@@ -425,6 +449,7 @@ class VotingDialog(discord.ui.View):
 
         except Exception as e:
             # Log the error
+            print(traceback.format_exc())
             print(f"An error occurred while handling the vote: {str(e)}")
             await interaction.response.send_message(
                 f"❌ An unexpected error occurred while processing your vote. Please try again later.",

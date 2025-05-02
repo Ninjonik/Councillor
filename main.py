@@ -22,7 +22,7 @@ intents.guilds = True
 
 def seconds_until(hours, minutes):
     given_time = datetime.time(hours, minutes)
-    given_time.replace(tzinfo=datetime.timezone.utc)
+    given_time = given_time.replace(tzinfo=datetime.timezone.utc)
     now = presets.datetime_now()
     future_exec = datetime.datetime.combine(now, given_time)
     if (future_exec - now).days < 0:  # If we are past the execution, it will take place tomorrow

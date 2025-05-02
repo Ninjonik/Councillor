@@ -1,6 +1,6 @@
 import sys
 import traceback
-from typing import Literal
+from typing import Literal, Optional, Union
 
 import discord
 import discord.utils
@@ -50,6 +50,70 @@ async def kick(member):
 
 def log(content):
     print(prefix() + content)
+
+
+async def handle_interaction_error(
+    interaction: discord.Interaction, 
+    error: Optional[Exception] = None, 
+    custom_message: Optional[str] = None,
+    ephemeral: bool = True
+) -> None:
+    """
+    Global error handling function for interactions.
+
+    Args:
+        interaction: The Discord interaction
+        error: The exception that occurred (optional)
+        custom_message: A custom error message to display (optional)
+        ephemeral: Whether the message should be ephemeral (default: True)
+
+    This function handles different types of errors with appropriate messages,
+    uses emojis for better visual feedback, and provides a fallback mechanism
+    to use interaction.channel.send when interaction.response.send_message isn't possible.
+    """
+    # Default error message
+    message = "❌ **An unexpected error occurred.** Please try again later."
+
+    # Handle specific error types
+    if error:
+        if isinstance(error, discord.errors.Forbidden):
+            message = "❌ **Missing Permissions!** The bot doesn't have the required permissions to perform this action."
+        elif isinstance(error, discord.errors.NotFound):
+            message = "❌ **Not Found!** The requested resource could not be found."
+        elif isinstance(error, discord.errors.HTTPException):
+            message = f"❌ **Discord API Error!** {error.status}: {error.text}"
+        elif isinstance(error, commands.MissingRequiredArgument):
+            message = f"❌ **Missing Argument!** The parameter `{error.param.name}` is required."
+        elif isinstance(error, commands.CommandOnCooldown):
+            message = f"⏱️ **Command on Cooldown!** Please try again in {error.retry_after:.1f} seconds."
+        elif isinstance(error, commands.MissingPermissions):
+            message = "🔒 **Missing Permissions!** You don't have the required permissions to use this command."
+        elif isinstance(error, Exception):
+            # Log the full error for debugging
+            print(f"Error in interaction: {error}")
+            traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+
+    # Use custom message if provided
+    if custom_message:
+        message = custom_message
+
+    try:
+        # Try to respond to the interaction
+        if not interaction.response.is_done():
+            await interaction.response.send_message(message, ephemeral=ephemeral)
+        else:
+            # If the interaction was already responded to, use followup
+            await interaction.followup.send(message, ephemeral=ephemeral)
+    except Exception as e:
+        # If responding to the interaction fails, try to send a message to the channel
+        try:
+            if interaction.channel:
+                await interaction.channel.send(message)
+        except Exception as channel_error:
+            # If all else fails, just log the error
+            print(f"Failed to send error message: {e}")
+            print(f"Original error: {error}")
+            print(f"Channel send error: {channel_error}")
 
 
 voting_types = {
@@ -114,7 +178,7 @@ def convert_datetime_from_str(datetime_str: None | str) -> None | datetime.datet
     for fmt in formats:
         try:
             datetime_obj = datetime.datetime.strptime(datetime_str, fmt)
-            datetime_obj.replace(tzinfo=datetime.timezone.utc)
+            datetime_obj = datetime_obj.replace(tzinfo=datetime.timezone.utc)
             return datetime_obj
         except ValueError:
             pass
@@ -318,15 +382,19 @@ class CouncilDialog(discord.ui.View):
             else:
                 print(f"{prefix()} New councillor in {interaction.guild.name} - {interaction.user.name}")
 
+                # Create a new list with all existing councils plus the new one
+                existing_councils = councillor_data["documents"][0]["councils"]
+                if isinstance(existing_councils, list):
+                    updated_councils = existing_councils + [f"{str(interaction.guild.id)}_c"]
+                else:
+                    updated_councils = [existing_councils, f"{str(interaction.guild.id)}_c"]
+
                 res = databases.update_document(
                     database_id=config.APPWRITE_DB_NAME,
                     collection_id='councillors',
                     document_id=f'{str(interaction.user.id)}',
                     data={
-                        'councils': [
-                            councillor_data["documents"][0]["councils"],
-                            f"{str(interaction.guild.id)}_c"
-                        ]
+                        'councils': updated_councils
                     }
                 )
 
@@ -341,19 +409,17 @@ class CouncilDialog(discord.ui.View):
                                                 "1f6uNX9h0NX8Ep06N74dVGsMEEqDa0I84YZp-yVvKQsg/edit?usp=sharing")
 
     async def on_error(self, interaction, error, item):
-        print(error)
-        print(type(error))
         if isinstance(error, discord.errors.Forbidden):
-            await interaction.response.send_message(content="❌ Bot doesn't have the enough permissions for "
-                                                            "adding/removing roles. Make sure to move "
-                                                            "it's role up in the role's hierarchy in the "
-                                                            "discord server's settings.\n"
-                                                            "✅ Other actions have been successfully executed.")
-        elif isinstance(error, commands.MissingRequiredArgument):
-            await interaction.response.send_message(content=f"'{error.param.name}' is a required argument.")
+            await handle_interaction_error(
+                interaction, 
+                error, 
+                "❌ **Missing Permissions!** Bot doesn't have enough permissions for adding/removing roles. Make sure to move "
+                "its role up in the role hierarchy in the server settings.\n"
+                "✅ Other actions have been successfully executed."
+            )
         else:
-            print(f'Ignoring exception in CouncilView:', file=sys.stderr)
-            traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+            print(f'Exception in CouncilView:', file=sys.stderr)
+            await handle_interaction_error(interaction, error)
 
 
 class VotingDialog(discord.ui.View):
@@ -475,11 +541,8 @@ class VotingDialog(discord.ui.View):
         await interaction.response.send_modal(VetoReason())
 
     async def on_error(self, interaction, error, item):
-        if isinstance(error, commands.MissingRequiredArgument):
-            await interaction.response.send_message(content=f"'{error.param.name}' is a required argument.")
-        else:
-            print(f'Ignoring exception in VotingDialog:', file=sys.stderr)
-            traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+        print(f'Exception in VotingDialog:', file=sys.stderr)
+        await handle_interaction_error(interaction, error)
 
 
 class VetoReason(discord.ui.Modal, title='Veto'):
@@ -513,7 +576,8 @@ class VetoReason(discord.ui.Modal, title='Veto'):
             return
 
     async def on_error(self, interaction: discord.Interaction, error):
-        await interaction.response.send_message('There was an error while processing the request.', ephemeral=True)
+        print(f'Exception in VetoReason:', file=sys.stderr)
+        await handle_interaction_error(interaction, error, "❌ **Error!** There was an error while processing your veto request.")
 
 
 class ElectionsAnnouncement(discord.ui.View):
@@ -553,11 +617,8 @@ class ElectionsAnnouncement(discord.ui.View):
         return await self.handle_register(interaction, True)
 
     async def on_error(self, interaction, error, item):
-        if isinstance(error, commands.MissingRequiredArgument):
-            await interaction.response.send_message(content=f"'{error.param.name}' is a required argument.")
-        else:
-            print(f'Ignoring exception in ElectionsAnnouncement:', file=sys.stderr)
-            traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+        print(f'Exception in ElectionsAnnouncement:', file=sys.stderr)
+        await handle_interaction_error(interaction, error, "❌ **Error!** There was an error while processing your election registration.")
 
 
 class ElectionsVoting(discord.ui.View):
@@ -626,7 +687,8 @@ class ElectionsVoting(discord.ui.View):
                     custom_id=f"vote_{i}",
                     emoji=generate_keycap_emoji(i + 1),
                 )
-                button.callback = lambda interaction: self.handle_vote(interaction)
+                # Use a default argument to capture the current value of i
+                button.callback = lambda interaction, i=i: self.handle_vote(interaction)
                 buttons.append(button)
             else:
                 print(f"❌ Warning: Empty candidate name at index {i}")
@@ -639,9 +701,6 @@ class ElectionsVoting(discord.ui.View):
         await self.handle_vote(interaction)
 
     async def on_error(self, interaction, error, item):
-        print(f"Ignoring exception in ElectionsVoting:", file=sys.stderr)
+        print(f"Exception in ElectionsVoting:", file=sys.stderr)
         traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
-        if isinstance(error, commands.MissingRequiredArgument):
-            await interaction.response.send_message(content=f"'{error.param.name}' is a required argument.")
-        else:
-            await interaction.response.send_message(f"An error occurred: {str(error)}")
+        await handle_interaction_error(interaction, error, "❌ **Error!** There was an error while processing your vote.")

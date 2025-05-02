@@ -26,13 +26,16 @@ class Elections(commands.Cog):
     )
     async def elections(self, interaction: discord.Interaction, action: app_commands.Choice[str], start: str = None,
                         end: str = None,
-                        limit: int = 4, announcement_channel: discord.TextChannel = None, ping_everyone: bool = False):
+                        announcement_channel: discord.TextChannel = None, ping_everyone: bool = False):
         eligible = (await presets.is_eligible(interaction.user, interaction.guild, "president")
                     or await presets.is_eligible(interaction.user, interaction.guild, "vice_president"))
 
         if not eligible:
-            await interaction.response.send_message(ephemeral=True,
-                                                    content="❌ You are not a Councillor of this server.")
+            await presets.handle_interaction_error(
+                interaction, 
+                custom_message="❌ **Not Eligible!** You are not a President or Vice President of this server.",
+                ephemeral=True
+            )
             return
 
         if not announcement_channel:
@@ -42,6 +45,9 @@ class Elections(commands.Cog):
         council_id = str(interaction.guild.id) + "_c"
 
         # Handle and convert the datetime
+        start_datetime = None
+        end_datetime = None
+
         if start:
             start_datetime = presets.convert_datetime_from_str(start)
         if end:
@@ -49,6 +55,14 @@ class Elections(commands.Cog):
 
         # Handle announcing the elections
         if action == "announce":
+            # Validate that both start and end dates are provided and valid
+            if not start_datetime or not end_datetime:
+                await presets.handle_interaction_error(
+                    interaction, 
+                    custom_message="❌ **Invalid Date Format!** Please use the format: Day.Month.Year Hours:Minutes (e.g., 24.12.2025 23:56)",
+                    ephemeral=True
+                )
+                return
             # Find if there is an already existing election for this council
             check_res = presets.databases.list_documents(
                 database_id=config.APPWRITE_DB_NAME,
@@ -59,13 +73,15 @@ class Elections(commands.Cog):
                 ]
             )
             if check_res["total"] > 0:
-                return await interaction.response.send_message(ephemeral=True,
-                                                               content="❌ There is already an election that is pending.")
+                return await presets.handle_interaction_error(
+                    interaction, 
+                    custom_message="❌ **Election Already Exists!** There is already a pending election for this server.",
+                    ephemeral=True
+                )
 
             embed = discord.Embed(title="📢Elections Announcement!",
                                   description="🎉 Election Alert! 🎉\n\nAttention citizens of "
-                                              f"{interaction.guild.name}!\n\nElection day for {limit} councillors of"
-                                              f" the Grand Council is "
+                                              f"{interaction.guild.name}!\n\nElection day for the Grand Council is "
                                               f"approaching!✨\n\n**Election Time:**\n📅 "
                                               f"From <t:{int(start_datetime.timestamp())}:F> to "
                                               f"<t:{int(end_datetime.timestamp())}:F>"
@@ -95,7 +111,12 @@ class Elections(commands.Cog):
 
             councillor_data = await presets.get_councillor_data(interaction.user.id, interaction.guild.id)
             if not councillor_data:
-                await interaction.response.send_message("❌ Councillor not found.", ephemeral=True)
+                await presets.handle_interaction_error(
+                    interaction, 
+                    custom_message="❌ **Councillor Not Found!** Your councillor data could not be found in the database.",
+                    ephemeral=True
+                )
+                return
 
             presets.databases.create_document(
                 database_id=config.APPWRITE_DB_NAME,
@@ -112,7 +133,7 @@ class Elections(commands.Cog):
                     "proposer": councillor_data["$id"],
                 }
             )
-            await interaction.response.send_message("✅ Elections successfully announced!", ephemeral=True)
+            await interaction.response.send_message("✅ **Success!** Elections have been successfully announced!", ephemeral=True)
 
         if action == "start":
             election_query = presets.databases.list_documents(
@@ -126,8 +147,11 @@ class Elections(commands.Cog):
                 ]
             )
             if election_query["total"] != 1:
-                return await interaction.response.send_message(ephemeral=True,
-                                                               content="❌ There is no valid election to start.")
+                return await presets.handle_interaction_error(
+                    interaction, 
+                    custom_message="❌ **No Valid Election!** There is no pending election to start.",
+                    ephemeral=True
+                )
 
             election = election_query["documents"][0]
             registered_query = presets.databases.list_documents(
@@ -188,11 +212,11 @@ class Elections(commands.Cog):
                     "status": "ongoing",
                     "message_id": str(message.id),
                     "proposer": None,
-                    "council": election["council"]["$id"],
+                    "council": council_id,
                 }
             )
 
-            await interaction.response.send_message("✅ Elections successfully started!", ephemeral=True)
+            await interaction.response.send_message("✅ **Success!** Elections have been successfully started!", ephemeral=True)
 
         if action == "conclude":
             election_query = presets.databases.list_documents(
@@ -206,10 +230,34 @@ class Elections(commands.Cog):
                 ]
             )
             if election_query["total"] != 1:
-                return await interaction.response.send_message(ephemeral=True,
-                                                               content="❌ There is no valid election to conclude.")
+                return await presets.handle_interaction_error(
+                    interaction, 
+                    custom_message="❌ **No Valid Election!** There is no ongoing election to conclude.",
+                    ephemeral=True
+                )
 
             election = election_query["documents"][0]
+            # Target is to have 12 councillors total
+            target_count = 12
+            # Minimum new councillors is 4
+            min_new_councillors = 4
+
+            # Get current councillors to determine how many winners to select
+            current_councillors_query = presets.databases.list_documents(
+                database_id=config.APPWRITE_DB_NAME,
+                collection_id="councillors",
+                queries=[
+                    Query.equal("council", council_id),
+                ]
+            )
+            current_councillors = current_councillors_query["documents"]
+            current_count = len(current_councillors)
+
+            # Calculate how many winners to select
+            # If we have fewer than target_count councillors, select enough to reach target_count
+            # Otherwise, select at least min_new_councillors
+            winners_to_select = max(min_new_councillors, min(9, target_count - current_count))
+
             winners_query = presets.databases.list_documents(
                 database_id=config.APPWRITE_DB_NAME,
                 collection_id="registered",
@@ -217,7 +265,7 @@ class Elections(commands.Cog):
                     Query.equal("election", election["$id"]),
                     Query.equal("candidate", True),
                     Query.order_desc("votes"),
-                    Query.limit(limit),
+                    Query.limit(winners_to_select),
                 ]
             )
             winners = winners_query["documents"]
@@ -250,7 +298,7 @@ class Elections(commands.Cog):
                     "status": "concluded",
                     "message_id": str(message.id),
                     "proposer": None,
-                    "council": election["council"]["$id"],
+                    "council": council_id,
                 }
             )
 
@@ -258,22 +306,39 @@ class Elections(commands.Cog):
             councillor_role = interaction.guild.get_role(int(guild_data["councillor_role_id"]))
             chancellor_role = interaction.guild.get_role(int(guild_data["chancellor_role_id"]))
 
-            # Clean up old councillors
+            # Calculate how many councillors to remove
             to_delete = []
-            # If the limit is more than 4 then it is not a regular election, but an election to fill spots
-            if limit <= 4:
-                to_delete_query = presets.databases.list_documents(
-                    database_id=config.APPWRITE_DB_NAME,
-                    collection_id="councillors",
-                    queries=[
-                        Query.equal("council", election["council"]["$id"]),
-                        Query.limit(len(winners)),
-                        Query.order_asc("$createdAt")
-                    ]
-                )
-                to_delete = to_delete_query["documents"]
-                print(to_delete_query)
-                print(to_delete)
+
+            # If we have fewer than (target_count - len(winners)) councillors, we don't remove any
+            # If we have more, we remove enough to get to target_count after adding winners
+            if current_count <= (target_count - len(winners)):
+                # We have fewer councillors than the target, so we don't remove any
+                to_delete = []
+            else:
+                # We need to remove some councillors to maintain the target count
+                # Calculate how many to remove
+                to_remove_count = current_count + len(winners) - target_count
+
+                # Ensure we're removing at least enough to add min_new_councillors
+                if len(winners) < min_new_councillors:
+                    # Not enough winners, don't remove any
+                    to_delete = []
+                elif to_remove_count < min_new_councillors:
+                    # Need to remove at least min_new_councillors
+                    to_remove_count = min_new_councillors
+
+                # Get the oldest councillors to remove
+                if to_remove_count > 0:
+                    to_delete_query = presets.databases.list_documents(
+                        database_id=config.APPWRITE_DB_NAME,
+                        collection_id="councillors",
+                        queries=[
+                            Query.equal("council", council_id),
+                            Query.limit(to_remove_count),
+                            Query.order_asc("$createdAt")
+                        ]
+                    )
+                    to_delete = to_delete_query["documents"]
 
             for old_councillor in to_delete:
                 presets.databases.delete_document(
@@ -300,14 +365,18 @@ class Elections(commands.Cog):
                     data={
                         "name": winner["name"],
                         "discord_id": winner["discord_id"],
-                        "council": election["council"]["$id"],
+                        "council": council_id,
                         "proposed": [],
                     }
                 )
                 winner_user = interaction.guild.get_member(int(winner["discord_id"]))
-                await winner_user.add_roles(councillor_role, reason="Term started.")
+                try:
+                    await winner_user.add_roles(councillor_role, reason="Term started.")
+                except Exception as e:
+                    print(f"Error adding councillor role to {winner['name']}: {str(e)}")
+                    pass
 
-            await interaction.response.send_message("✅ Elections successfully concluded!", ephemeral=True)
+            await interaction.response.send_message("✅ **Success!** Elections have been successfully concluded!", ephemeral=True)
 
 
 async def setup(client: commands.Bot) -> None:

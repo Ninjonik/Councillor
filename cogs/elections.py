@@ -354,7 +354,7 @@ class Elections(commands.Cog):
                 try:
                     await old_councillor_user.remove_roles(chancellor_role, reason="Term ended.")
                 except Exception as e:
-                    print(f"Error removing councillor role to {old_councillor_user['name']}: {str(e)}")
+                    print(f"Error removing councillor role {str(e)}")
                     pass
 
             # Add new councillors
@@ -374,7 +374,7 @@ class Elections(commands.Cog):
                     winner_user = interaction.guild.get_member(int(winner["discord_id"]))
                     await winner_user.add_roles(councillor_role, reason="Term started.")
                 except Exception as e:
-                    print(f"Error adding councillor role to {winner['name']}: {str(e)}")
+                    print(f"Error adding councillor role {str(e)}")
                     pass
 
             await interaction.response.send_message("✅ **Success!** Elections have been successfully concluded!", ephemeral=True)

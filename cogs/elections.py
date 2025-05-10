@@ -341,36 +341,37 @@ class Elections(commands.Cog):
                     to_delete = to_delete_query["documents"]
 
             for old_councillor in to_delete:
-                presets.databases.delete_document(
-                    database_id=config.APPWRITE_DB_NAME,
-                    collection_id="councillors",
-                    document_id=str(old_councillor["$id"]),
-                )
-                old_councillor_user = interaction.guild.get_member(int(old_councillor["discord_id"]))
                 try:
+                    presets.databases.delete_document(
+                        database_id=config.APPWRITE_DB_NAME,
+                        collection_id="councillors",
+                        document_id=str(old_councillor["$id"]),
+                    )
+                    old_councillor_user = interaction.guild.get_member(int(old_councillor["discord_id"]))
                     await old_councillor_user.remove_roles(councillor_role, reason="Term ended.")
                 except Exception as e:
                     pass
                 try:
                     await old_councillor_user.remove_roles(chancellor_role, reason="Term ended.")
                 except Exception as e:
+                    print(f"Error removing councillor role to {old_councillor_user['name']}: {str(e)}")
                     pass
 
             # Add new councillors
             for winner in winners:
-                presets.databases.create_document(
-                    database_id=config.APPWRITE_DB_NAME,
-                    collection_id='councillors',
-                    document_id=ID.unique(),
-                    data={
-                        "name": winner["name"],
-                        "discord_id": winner["discord_id"],
-                        "council": council_id,
-                        "proposed": [],
-                    }
-                )
-                winner_user = interaction.guild.get_member(int(winner["discord_id"]))
                 try:
+                    presets.databases.create_document(
+                        database_id=config.APPWRITE_DB_NAME,
+                        collection_id='councillors',
+                        document_id=ID.unique(),
+                        data={
+                            "name": winner["name"],
+                            "discord_id": winner["discord_id"],
+                            "council": council_id,
+                            "proposed": [],
+                        }
+                    )
+                    winner_user = interaction.guild.get_member(int(winner["discord_id"]))
                     await winner_user.add_roles(councillor_role, reason="Term started.")
                 except Exception as e:
                     print(f"Error adding councillor role to {winner['name']}: {str(e)}")

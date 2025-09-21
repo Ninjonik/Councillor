@@ -3,4 +3,4 @@ A Councillor Discord bot which handles all the democratic processes within your 
 
 Uses Appwrite as a BaaS platform instead of own backend.
 
-As of now, made for the World War Community Discord server exclusively.
+Made for the World War Community Discord server exclusively.

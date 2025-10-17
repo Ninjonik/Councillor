@@ -1,5 +1,4 @@
-# Appwrite environment variables
-APPWRITE_ENDPOINT = ''
+APPWRITE_ENDPOINT = 'https://appwrite.igportals.eu/v1'
 APPWRITE_PROJECT = 'councillor'
 APPWRITE_KEY = ''
 APPWRITE_DB_NAME = 'councillor'
@@ -7,5 +6,7 @@ APPWRITE_DB_NAME = 'councillor'
 ROLE_REQUIREMENT_ID = None
 DAYS_REQUIREMENT = 180
 VOTING_CHANNEL_ID = None
-BOT_TOKEN = ''
+DISCORD_TOKEN = ''
+GUILD_ID = None
 DEBUG_MODE = False
+

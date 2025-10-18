@@ -1,193 +1,122 @@
 import discord
-from discord.ext import commands, tasks
-from appwrite.client import Client
-from appwrite.services.databases import Databases
-from appwrite.query import Query
-from datetime import datetime, time, timedelta, timezone
+from discord import app_commands
+from discord.ext import commands
 import asyncio
-import platform
 import config
-import utils
-import embeds
-import views
+from embeds import error_embed
+from logger import log
+from utils import db
 
+# Bot setup
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 intents.guilds = True
 
-class CouncilBot(commands.Bot):
-    def __init__(self):
-        super().__init__(command_prefix=commands.when_mentioned_or('!'), intents=intents)
-        self.appwrite_client = Client()
-        self.appwrite_client.set_endpoint(config.APPWRITE_ENDPOINT)
-        self.appwrite_client.set_project(config.APPWRITE_PROJECT)
-        self.appwrite_client.set_key(config.APPWRITE_KEY)
-        self.db = Databases(self.appwrite_client)
-        self.database_id = config.APPWRITE_DB_NAME
+bot = commands.Bot(command_prefix="!", intents=intents)
+bot.db = db  # Attach database client to bot
 
-    async def setup_hook(self):
-        cogs = ['cogs.governance', 'cogs.executive', 'cogs.elections', 'cogs.admin']
-        for cog in cogs:
-            await self.load_extension(cog)
+@bot.event
+async def on_ready():
+    log.success(f"{bot.user} is online!")
+    log.info(f"Connected to {len(bot.guilds)} guild(s)")
 
-    async def on_ready(self):
-        print(f"Logged in as {self.user.name}")
-        print(f"Bot ID: {self.user.id}")
-        print(f"Discord Version: {discord.__version__}")
-        print(f"Python version: {platform.python_version()}")
-        
-        synced = await self.tree.sync()
-        print(f"Synced {len(synced)} slash commands")
-        
-        if not self.status_loop.is_running():
-            self.status_loop.start()
-        if not self.update_votings.is_running():
-            self.update_votings.start()
-
-    async def on_guild_join(self, guild: discord.Guild):
+    # Load cogs
+    cogs = ["cogs.admin", "cogs.elections", "cogs.executive", "cogs.parliament", "cogs.governance"]
+    for cog in cogs:
         try:
-            self.db.create_document(
-                database_id=config.APPWRITE_DB_NAME,
-                collection_id='guilds',
-                document_id=str(guild.id),
-                data={}
-            )
-            print(f"New guild added: {guild.name}")
+            await bot.load_extension(cog)
+            log.success(f"Loaded {cog}")
         except Exception as e:
-            print(f"Error adding guild: {e}")
+            log.error(f"Failed to load {cog}: {e}")
 
-    async def on_guild_remove(self, guild: discord.Guild):
+    # Sync commands globally
+    try:
+        log.info("Syncing slash commands globally...")
+        synced = await bot.tree.sync()
+        log.success(f"Synced {len(synced)} command(s) globally")
+    except Exception as e:
+        log.error(f"Failed to sync commands: {e}")
+
+    log.success("Bot is ready!")
+
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    """Global error handler for slash commands"""
+
+    # Handle command on cooldown
+    if isinstance(error, app_commands.CommandOnCooldown):
+        await interaction.response.send_message(
+            embed=error_embed("Cooldown", f"This command is on cooldown. Try again in {error.retry_after:.1f} seconds."),
+            ephemeral=True
+        )
+        return
+
+    # Handle missing permissions
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message(
+            embed=error_embed("Missing Permissions", "You don't have permission to use this command."),
+            ephemeral=True
+        )
+        return
+
+    # Handle bot missing permissions
+    if isinstance(error, app_commands.BotMissingPermissions):
+        await interaction.response.send_message(
+            embed=error_embed("Bot Missing Permissions", "I don't have the required permissions to execute this command."),
+            ephemeral=True
+        )
+        return
+
+    # Log unexpected errors
+    log.error(f"Command error: {error}")
+
+    if not interaction.response.is_done():
+        await interaction.response.send_message(
+            embed=error_embed("Error", "An unexpected error occurred. Please try again later."),
+            ephemeral=True
+        )
+    else:
+        await interaction.followup.send(
+            embed=error_embed("Error", "An unexpected error occurred. Please try again later."),
+            ephemeral=True
+        )
+
+@bot.event
+async def on_guild_join(guild):
+    """Send setup instructions when bot joins a server"""
+    log.info(f"Joined new guild: {guild.name} (ID: {guild.id})")
+
+    if guild.system_channel:
+        embed = discord.Embed(
+            title="👋 Thanks for adding me!",
+            description="I'm a Grand Council governance bot that manages democratic elections according to the World War Community Constitution.",
+            color=discord.Color.blue()
+        )
+        embed.add_field(
+            name="📋 Setup Steps",
+            value="1. Create Discord roles: `President`, `Vice President`, `Chancellor`, `Councillor`, `Citizen`\n"
+                  "2. Assign President and Vice President roles manually to leadership\n"
+                  "3. President/VP can use `/elections` to manage Grand Council elections\n"
+                  "4. Citizens can register to vote or run for Council during election announcements",
+            inline=False
+        )
+        embed.set_footer(text="Run /help for more information")
         try:
-            self.db.delete_document(
-                database_id=config.APPWRITE_DB_NAME,
-                collection_id='guilds',
-                document_id=str(guild.id)
-            )
-            print(f"Guild removed: {guild.name}")
-        except Exception as e:
-            print(f"Error removing guild: {e}")
-
-    @tasks.loop(hours=24)
-    async def update_votings(self):
-        if not config.DEBUG_MODE:
-            wait = self.seconds_until(0, 5)
-            await asyncio.sleep(wait)
-
-        current_datetime = utils.datetime_now()
-
-        for guild in self.guilds:
-            try:
-                votings_result = self.db.list_documents(
-                    database_id=config.APPWRITE_DB_NAME,
-                    collection_id='votings',
-                    queries=[
-                        Query.equal('status', 'voting'),
-                        Query.equal('council', str(guild.id) + "_c"),
-                        Query.less_than_equal("voting_end", current_datetime.isoformat())
-                    ]
-                )
-                
-                votings = votings_result["documents"]
-                guild_data = utils.get_guild_data(self.db, guild.id)
-
-                if not guild_data or not guild_data.get("voting_channel_id"):
-                    continue
-                    
-                channel = guild.get_channel(int(guild_data["voting_channel_id"]))
-                
-                for voting in votings:
-                    await self.process_voting_result(voting, guild, channel)
-
-            except Exception as e:
-                print(f"Error processing votings for guild {guild.id}: {e}")
-
-    async def process_voting_result(self, voting, guild, channel):
-        voting_type_data = utils.voting_types.get(voting["type"])
-        if not voting_type_data:
-            return
-
-        votes_result = self.db.list_documents(
-            database_id=config.APPWRITE_DB_NAME,
-            collection_id='votes',
-            queries=[Query.equal('voting', voting["$id"])]
-        )
-        
-        votes = votes_result["documents"]
-        positive_votes = sum(1 for v in votes if v["stance"])
-        negative_votes = len(votes) - positive_votes
-
-        required_percentage = voting_type_data["required_percentage"]
-        passed = len(votes) > 0 and (positive_votes / len(votes)) > required_percentage
-
-        proposer_name = None
-        if voting.get('proposer'):
-            try:
-                councillor = self.db.get_document(
-                    database_id=config.APPWRITE_DB_NAME,
-                    collection_id='councillors',
-                    document_id=voting['proposer']
-                )
-                proposer_name = councillor['name']
-            except:
-                pass
-
-        embed = embeds.create_voting_result_embed(
-            voting["title"],
-            voting.get("description", ""),
-            passed,
-            positive_votes,
-            negative_votes,
-            required_percentage,
-            proposer_name
-        )
-
-        if channel:
-            await channel.send(embed=embed)
-        
-        self.db.update_document(
-            database_id=config.APPWRITE_DB_NAME,
-            collection_id="votings",
-            document_id=voting['$id'],
-            data={"status": "passed" if passed else "failed"}
-        )
-
-    @tasks.loop(seconds=30)
-    async def status_loop(self):
-        await self.wait_until_ready()
-        
-        await self.change_presence(
-            status=discord.Status.idle,
-            activity=discord.Activity(
-                type=discord.ActivityType.watching,
-                name=f"{len(self.guilds)} servers"
-            )
-        )
-        await asyncio.sleep(10)
-        
-        member_count = sum(guild.member_count for guild in self.guilds)
-        await self.change_presence(
-            status=discord.Status.dnd,
-            activity=discord.Activity(
-                type=discord.ActivityType.listening,
-                name=f"{member_count} people"
-            )
-        )
-        await asyncio.sleep(10)
-
-    @staticmethod
-    def seconds_until(hours: int, minutes: int) -> float:
-        target_time = time(hours, minutes)
-        now = datetime.now(timezone.utc)
-        future_exec = datetime.combine(now.date(), target_time, tzinfo=timezone.utc)
-        
-        if future_exec <= now:
-            future_exec += timedelta(days=1)
-        
-        return (future_exec - now).total_seconds()
+            await guild.system_channel.send(embed=embed)
+        except discord.Forbidden:
+            pass
 
 def main():
-    bot = CouncilBot()
+    """Run the bot"""
+    if not config.DISCORD_TOKEN:
+        log.error("DISCORD_TOKEN not found in config!")
+        return
+
+    if not all([config.APPWRITE_ENDPOINT, config.APPWRITE_PROJECT_ID, config.APPWRITE_API_KEY]):
+        log.warning("Appwrite credentials not configured!")
+
+    log.info("Starting bot...")
     bot.run(config.DISCORD_TOKEN)
 
 if __name__ == "__main__":

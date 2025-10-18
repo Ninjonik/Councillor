@@ -1,335 +1,259 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from appwrite.id import ID
-from appwrite.query import Query
+from embeds import create_success_embed, create_error_embed
+from utils import create_guild_data, get_guild_data
 import config
-import utils
-import embeds
+from appwrite.id import ID
 
-BOT_ADMIN_ID = 231105080961531905
-
-def is_bot_admin():
-    def predicate(interaction: discord.Interaction) -> bool:
-        return interaction.user.id == BOT_ADMIN_ID
-    return app_commands.check(predicate)
+# Admin user ID - has wildcard permissions
+ADMIN_USER_ID = 231105080961531905
 
 class Admin(commands.Cog):
-    def __init__(self, client: commands.Bot):
-        self.client = client
+    """Bot admin commands"""
 
-    @app_commands.command(name="setup_guild", description="[Admin] Initialize guild configuration")
-    @is_bot_admin()
-    async def setup_guild(
+    def __init__(self, bot):
+        self.bot = bot
+
+    @app_commands.command(name="setup", description="[Admin] Initial bot setup - configure government roles")
+    @app_commands.describe(
+        president_role="Role for President",
+        vice_president_role="Role for Vice President",
+        chancellor_role="Role for Chancellor",
+        councillor_role="Role for Councillors",
+        citizen_role="Role for Citizens (optional)"
+    )
+    @app_commands.guild_only()
+    async def setup(
         self,
         interaction: discord.Interaction,
+        president_role: discord.Role,
+        vice_president_role: discord.Role,
+        chancellor_role: discord.Role,
         councillor_role: discord.Role,
-        chancellor_role: discord.Role = None,
+        citizen_role: discord.Role = None
+    ):
+        """Setup the bot with government roles"""
+        # Check if user is admin or has administrator permission
+        if interaction.user.id != ADMIN_USER_ID and not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message(
+                embed=create_error_embed("Permission Denied", "Only administrators can run setup."),
+                ephemeral=True
+            )
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Check if guild already exists in database
+            guild_data = get_guild_data(self.bot.db, interaction.guild.id)
+
+            # Prepare data
+            data = {
+                "guild_id": str(interaction.guild.id),
+                "president_role_id": str(president_role.id),
+                "vice_president_role_id": str(vice_president_role.id),
+                "chancellor_role_id": str(chancellor_role.id),
+                "councillor_role_id": str(councillor_role.id)
+            }
+
+            if citizen_role:
+                data["citizen_role_id"] = str(citizen_role.id)
+
+            # Create or update guild data
+            if guild_data:
+                # Update existing
+                self.bot.db.update_document(
+                    database_id=config.APPWRITE_DATABASE_ID,
+                    collection_id=config.COLLECTION_GUILDS,
+                    document_id=guild_data["$id"],
+                    data=data
+                )
+            else:
+                # Create new
+                self.bot.db.create_document(
+                    database_id=config.APPWRITE_DATABASE_ID,
+                    collection_id=config.COLLECTION_GUILDS,
+                    document_id=ID.unique(),
+                    data=data
+                )
+
+            embed = create_success_embed(
+                "✅ Setup Complete!",
+                f"Government roles have been configured:\n\n"
+                f"👑 **President:** {president_role.mention}\n"
+                f"🎩 **Vice President:** {vice_president_role.mention}\n"
+                f"⚖️ **Chancellor:** {chancellor_role.mention}\n"
+                f"🎖️ **Councillor:** {councillor_role.mention}\n" +
+                (f"👥 **Citizen:** {citizen_role.mention}\n" if citizen_role else "") +
+                f"\nThe bot is now ready to use!"
+            )
+            embed.set_footer(text="You can now start using election and governance commands")
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            await interaction.followup.send(
+                embed=create_error_embed("Setup Failed", f"Error: {str(e)}"),
+                ephemeral=True
+            )
+
+    @app_commands.command(name="update_roles", description="[Admin] Update configured roles")
+    @app_commands.describe(
+        president_role="Role for President (optional)",
+        vice_president_role="Role for Vice President (optional)",
+        chancellor_role="Role for Chancellor (optional)",
+        councillor_role="Role for Councillors (optional)",
+        citizen_role="Role for Citizens (optional)"
+    )
+    @app_commands.guild_only()
+    async def update_roles(
+        self,
+        interaction: discord.Interaction,
         president_role: discord.Role = None,
         vice_president_role: discord.Role = None,
-        judiciary_role: discord.Role = None,
-        voting_channel: discord.TextChannel = None
+        chancellor_role: discord.Role = None,
+        councillor_role: discord.Role = None,
+        citizen_role: discord.Role = None
     ):
-        try:
-            guild_id = str(interaction.guild.id)
-
-            data = {'councillor_role_id': str(councillor_role.id)}
-
-            if chancellor_role:
-                data['chancellor_role_id'] = str(chancellor_role.id)
-            if president_role:
-                data['president_role_id'] = str(president_role.id)
-            if vice_president_role:
-                data['vice_president_role_id'] = str(vice_president_role.id)
-            if judiciary_role:
-                data['judiciary_role_id'] = str(judiciary_role.id)
-            if voting_channel:
-                data['voting_channel_id'] = str(voting_channel.id)
-
-            try:
-                self.client.db.create_document(
-                    database_id=config.APPWRITE_DB_NAME,
-                    collection_id='guilds',
-                    document_id=guild_id,
-                    data=data
-                )
-                msg = "Guild configuration created!"
-            except:
-                self.client.db.update_document(
-                    database_id=config.APPWRITE_DB_NAME,
-                    collection_id='guilds',
-                    document_id=guild_id,
-                    data=data
-                )
-                msg = "Guild configuration updated!"
-
-            await interaction.response.send_message(
-                embed=embeds.create_success_embed("Configuration Saved", msg),
+        """Update specific roles without running full setup"""
+        if interaction.user.id != ADMIN_USER_ID and not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message(
+                embed=create_error_embed("Permission Denied", "Only administrators can update roles."),
                 ephemeral=True
             )
-        except Exception as e:
-            await utils.handle_interaction_error(interaction, e)
 
-    @app_commands.command(name="appoint_councillor", description="[Admin] Manually appoint someone as councillor")
-    @is_bot_admin()
-    async def appoint_councillor(self, interaction: discord.Interaction, member: discord.Member):
+        await interaction.response.defer(ephemeral=True)
+
         try:
-            guild_data = utils.get_guild_data(self.client.db, interaction.guild.id)
-            if not guild_data or not guild_data.get("councillor_role_id"):
-                return await interaction.response.send_message(
-                    embed=embeds.create_error_embed("Config Error", "Councillor role not configured!"),
-                    ephemeral=True
-                )
-
-            council_id = str(interaction.guild.id) + "_c"
-
-            existing = await utils.get_councillor_data(self.client.db, member.id, interaction.guild.id)
-            if existing:
-                return await interaction.response.send_message(
-                    embed=embeds.create_error_embed("Already Councillor", f"{member.mention} is already a councillor!"),
-                    ephemeral=True
-                )
-
-            self.client.db.create_document(
-                database_id=config.APPWRITE_DB_NAME,
-                collection_id='councillors',
-                document_id=ID.unique(),
-                data={
-                    'discord_id': str(member.id),
-                    'name': member.display_name,
-                    'council': council_id
-                }
-            )
-
-            councillor_role = interaction.guild.get_role(int(guild_data['councillor_role_id']))
-            if councillor_role:
-                await member.add_roles(councillor_role, reason=f"Appointed by {interaction.user.name}")
-
-            await interaction.response.send_message(
-                embed=embeds.create_success_embed("Councillor Appointed", f"{member.mention} is now a councillor!"),
-                ephemeral=True
-            )
-        except Exception as e:
-            await utils.handle_interaction_error(interaction, e)
-
-    @app_commands.command(name="remove_councillor", description="[Admin] Remove someone from councillor position")
-    @is_bot_admin()
-    async def remove_councillor(self, interaction: discord.Interaction, member: discord.Member):
-        try:
-            councillor_data = await utils.get_councillor_data(self.client.db, member.id, interaction.guild.id)
-            if not councillor_data:
-                return await interaction.response.send_message(
-                    embed=embeds.create_error_embed("Not Found", f"{member.mention} is not a councillor!"),
-                    ephemeral=True
-                )
-
-            self.client.db.delete_document(
-                database_id=config.APPWRITE_DB_NAME,
-                collection_id='councillors',
-                document_id=councillor_data["$id"]
-            )
-
-            guild_data = utils.get_guild_data(self.client.db, interaction.guild.id)
-            if guild_data and guild_data.get('councillor_role_id'):
-                councillor_role = interaction.guild.get_role(int(guild_data['councillor_role_id']))
-                if councillor_role:
-                    await member.remove_roles(councillor_role, reason=f"Removed by {interaction.user.name}")
-
-            await interaction.response.send_message(
-                embed=embeds.create_success_embed("Councillor Removed", f"{member.mention} removed from Council!"),
-                ephemeral=True
-            )
-        except Exception as e:
-            await utils.handle_interaction_error(interaction, e)
-
-    @app_commands.command(name="set_role", description="[Admin] Configure a specific role for the guild")
-    @is_bot_admin()
-    @app_commands.choices(role_type=[
-        app_commands.Choice(name="Councillor", value="councillor_role_id"),
-        app_commands.Choice(name="Chancellor", value="chancellor_role_id"),
-        app_commands.Choice(name="President", value="president_role_id"),
-        app_commands.Choice(name="Vice President", value="vice_president_role_id"),
-        app_commands.Choice(name="Chief Justice", value="judiciary_role_id"),
-    ])
-    async def set_role(self, interaction: discord.Interaction, role_type: app_commands.Choice[str], role: discord.Role):
-        try:
-            guild_id = str(interaction.guild.id)
-
-            try:
-                self.client.db.update_document(
-                    database_id=config.APPWRITE_DB_NAME,
-                    collection_id='guilds',
-                    document_id=guild_id,
-                    data={role_type.value: str(role.id)}
-                )
-            except:
-                self.client.db.create_document(
-                    database_id=config.APPWRITE_DB_NAME,
-                    collection_id='guilds',
-                    document_id=guild_id,
-                    data={role_type.value: str(role.id)}
-                )
-
-            await interaction.response.send_message(
-                embed=embeds.create_success_embed("Role Configured", f"{role_type.name} → {role.mention}"),
-                ephemeral=True
-            )
-        except Exception as e:
-            await utils.handle_interaction_error(interaction, e)
-
-    @app_commands.command(name="set_voting_channel", description="[Admin] Set the voting channel")
-    @is_bot_admin()
-    async def set_voting_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        try:
-            guild_id = str(interaction.guild.id)
-
-            try:
-                self.client.db.update_document(
-                    database_id=config.APPWRITE_DB_NAME,
-                    collection_id='guilds',
-                    document_id=guild_id,
-                    data={'voting_channel_id': str(channel.id)}
-                )
-            except:
-                self.client.db.create_document(
-                    database_id=config.APPWRITE_DB_NAME,
-                    collection_id='guilds',
-                    document_id=guild_id,
-                    data={'voting_channel_id': str(channel.id)}
-                )
-
-            await interaction.response.send_message(
-                embed=embeds.create_success_embed("Channel Set", f"Voting channel: {channel.mention}"),
-                ephemeral=True
-            )
-        except Exception as e:
-            await utils.handle_interaction_error(interaction, e)
-
-    @app_commands.command(name="cancel_voting", description="[Admin] Cancel an ongoing vote")
-    @is_bot_admin()
-    async def cancel_voting(self, interaction: discord.Interaction, voting_message_id: str):
-        try:
-            voting = self.client.db.get_document(
-                database_id=config.APPWRITE_DB_NAME,
-                collection_id='votings',
-                document_id=voting_message_id
-            )
-
-            self.client.db.update_document(
-                database_id=config.APPWRITE_DB_NAME,
-                collection_id='votings',
-                document_id=voting_message_id,
-                data={'status': 'cancelled'}
-            )
-
-            await interaction.response.send_message(
-                embed=embeds.create_success_embed("Vote Cancelled", f"'{voting['title']}' has been cancelled."),
-                ephemeral=True
-            )
-        except Exception as e:
-            await utils.handle_interaction_error(interaction, e, "Voting not found")
-
-    @app_commands.command(name="view_config", description="[Admin] View current guild configuration")
-    @is_bot_admin()
-    async def view_config(self, interaction: discord.Interaction):
-        try:
-            guild_data = utils.get_guild_data(self.client.db, interaction.guild.id)
+            guild_data = get_guild_data(self.bot.db, interaction.guild.id)
 
             if not guild_data:
-                return await interaction.response.send_message(
-                    embed=embeds.create_error_embed("Not Configured", "Guild not configured yet!"),
+                return await interaction.followup.send(
+                    embed=create_error_embed("Setup Required", "Please run `/setup` first to configure the bot."),
                     ephemeral=True
                 )
 
-            embed = embeds.create_info_embed("Guild Configuration", "Current server settings:", 0x3498DB)
+            # Build update data
+            data = {}
+            changes = []
 
-            role_fields = [
-                ('councillor_role_id', 'Councillor Role'),
-                ('chancellor_role_id', 'Chancellor Role'),
-                ('president_role_id', 'President Role'),
-                ('vice_president_role_id', 'Vice President Role'),
-                ('judiciary_role_id', 'Chief Justice Role')
-            ]
+            if president_role:
+                data["president_role_id"] = str(president_role.id)
+                changes.append(f"👑 **President:** {president_role.mention}")
+            if vice_president_role:
+                data["vice_president_role_id"] = str(vice_president_role.id)
+                changes.append(f"🎩 **Vice President:** {vice_president_role.mention}")
+            if chancellor_role:
+                data["chancellor_role_id"] = str(chancellor_role.id)
+                changes.append(f"⚖️ **Chancellor:** {chancellor_role.mention}")
+            if councillor_role:
+                data["councillor_role_id"] = str(councillor_role.id)
+                changes.append(f"🎖️ **Councillor:** {councillor_role.mention}")
+            if citizen_role:
+                data["citizen_role_id"] = str(citizen_role.id)
+                changes.append(f"👥 **Citizen:** {citizen_role.mention}")
 
-            for field_id, field_name in role_fields:
-                if guild_data.get(field_id):
-                    role = interaction.guild.get_role(int(guild_data[field_id]))
-                    embed.add_field(name=field_name, value=role.mention if role else "❌ Not found", inline=True)
-
-            if guild_data.get('voting_channel_id'):
-                channel = interaction.guild.get_channel(int(guild_data['voting_channel_id']))
-                embed.add_field(name="Voting Channel", value=channel.mention if channel else "❌ Not found", inline=False)
-
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        except Exception as e:
-            await utils.handle_interaction_error(interaction, e)
-
-    @app_commands.command(name="list_councillors", description="[Admin] List all councillors")
-    @is_bot_admin()
-    async def list_councillors(self, interaction: discord.Interaction):
-        try:
-            council_id = str(interaction.guild.id) + "_c"
-            result = self.client.db.list_documents(
-                database_id=config.APPWRITE_DB_NAME,
-                collection_id='councillors',
-                queries=[Query.equal('council', council_id)]
-            )
-
-            councillors = result["documents"]
-
-            if not councillors:
-                return await interaction.response.send_message(
-                    embed=embeds.create_info_embed("No Councillors", "No councillors found in this server."),
+            if not data:
+                return await interaction.followup.send(
+                    embed=create_error_embed("No Changes", "Please specify at least one role to update."),
                     ephemeral=True
                 )
 
-            embed = embeds.create_info_embed(
-                "Councillors List",
-                f"Total: {len(councillors)} councillor{'s' if len(councillors) != 1 else ''}",
-                0x2ECC71
+            # Update
+            self.bot.db.update_document(
+                database_id=config.APPWRITE_DATABASE_ID,
+                collection_id=config.COLLECTION_GUILDS,
+                document_id=guild_data["$id"],
+                data=data
             )
 
-            for councillor in councillors[:25]:
-                member = interaction.guild.get_member(int(councillor['discord_id']))
-                status = "✅ Active" if member else "❌ Left server"
-                embed.add_field(
-                    name=councillor['name'],
-                    value=f"{status}\nID: `{councillor['discord_id']}`",
-                    inline=True
+            embed = create_success_embed(
+                "✅ Roles Updated!",
+                "The following roles have been updated:\n\n" + "\n".join(changes)
+            )
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            await interaction.followup.send(
+                embed=create_error_embed("Update Failed", f"Error: {str(e)}"),
+                ephemeral=True
+            )
+
+    @app_commands.command(name="view_config", description="[Admin] View current bot configuration")
+    @app_commands.guild_only()
+    async def view_config(self, interaction: discord.Interaction):
+        """View current bot configuration"""
+        if interaction.user.id != ADMIN_USER_ID and not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message(
+                embed=create_error_embed("Permission Denied", "Only administrators can view configuration."),
+                ephemeral=True
+            )
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            guild_data = get_guild_data(self.bot.db, interaction.guild.id)
+
+            if not guild_data:
+                return await interaction.followup.send(
+                    embed=create_error_embed("Setup Required", "Bot has not been configured yet. Run `/setup` first."),
+                    ephemeral=True
                 )
 
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        except Exception as e:
-            await utils.handle_interaction_error(interaction, e)
-
-    @app_commands.command(name="cleanup_councillors", description="[Admin] Remove councillors who left")
-    @is_bot_admin()
-    async def cleanup_councillors(self, interaction: discord.Interaction):
-        try:
-            council_id = str(interaction.guild.id) + "_c"
-            result = self.client.db.list_documents(
-                database_id=config.APPWRITE_DB_NAME,
-                collection_id='councillors',
-                queries=[Query.equal('council', council_id)]
+            embed = discord.Embed(
+                title="⚙️ Bot Configuration",
+                description=f"Current configuration for **{interaction.guild.name}**",
+                color=discord.Color.blue()
             )
 
-            removed = 0
-            for councillor in result["documents"]:
-                member = interaction.guild.get_member(int(councillor['discord_id']))
-                if not member:
-                    self.client.db.delete_document(
-                        database_id=config.APPWRITE_DB_NAME,
-                        collection_id='councillors',
-                        document_id=councillor['$id']
-                    )
-                    removed += 1
+            # Show configured roles
+            roles_text = []
+            for role_type in ["president", "vice_president", "chancellor", "councillor", "citizen"]:
+                role_id = guild_data.get(f"{role_type}_role_id")
+                if role_id:
+                    role = interaction.guild.get_role(int(role_id))
+                    if role:
+                        roles_text.append(f"**{role_type.replace('_', ' ').title()}:** {role.mention}")
+                    else:
+                        roles_text.append(f"**{role_type.replace('_', ' ').title()}:** Role not found (ID: {role_id})")
+                else:
+                    roles_text.append(f"**{role_type.replace('_', ' ').title()}:** Not configured")
 
-            await interaction.response.send_message(
-                embed=embeds.create_success_embed("Cleanup Complete", f"Removed {removed} councillor(s) who left the server."),
+            embed.add_field(name="📋 Configured Roles", value="\n".join(roles_text), inline=False)
+            embed.set_footer(text="Use /update_roles to modify configuration")
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            await interaction.followup.send(
+                embed=create_error_embed("Error", f"Failed to fetch configuration: {str(e)}"),
+                ephemeral=True
+            )
+
+    @app_commands.command(name="sync_commands", description="[Admin] Sync slash commands")
+    @app_commands.guild_only()
+    async def sync_commands(self, interaction: discord.Interaction):
+        """Sync slash commands to the guild"""
+        if interaction.user.id != ADMIN_USER_ID and not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message(
+                embed=create_error_embed("Permission Denied", "Only administrators can sync commands."),
+                ephemeral=True
+            )
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            synced = await self.bot.tree.sync(guild=interaction.guild)
+            await interaction.followup.send(
+                embed=create_success_embed("Commands Synced", f"Synced {len(synced)} commands to this server."),
                 ephemeral=True
             )
         except Exception as e:
-            await utils.handle_interaction_error(interaction, e)
+            await interaction.followup.send(
+                embed=create_error_embed("Sync Failed", f"Error: {str(e)}"),
+                ephemeral=True
+            )
 
-async def setup(client: commands.Bot) -> None:
-    await client.add_cog(Admin(client))
+async def setup(bot):
+    await bot.add_cog(Admin(bot))

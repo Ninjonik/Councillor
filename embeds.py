@@ -1,153 +1,134 @@
 import discord
 from datetime import datetime
-from typing import Optional
+import utils
 
 def create_success_embed(title: str, description: str) -> discord.Embed:
-    return discord.Embed(
-        title=f"✅ {title}",
-        description=description,
-        color=0x00FF00,
-        timestamp=datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
-    )
+    embed = discord.Embed(title=f"✅ {title}", description=description, color=0x2ECC71)
+    embed.timestamp = utils.datetime_now()
+    return embed
 
 def create_error_embed(title: str, description: str) -> discord.Embed:
-    return discord.Embed(
-        title=f"❌ {title}",
-        description=description,
-        color=0xFF0000,
-        timestamp=datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
-    )
-
-def create_info_embed(title: str, description: str, color: int = 0x3498DB) -> discord.Embed:
-    return discord.Embed(
-        title=title,
-        description=description,
-        color=color,
-        timestamp=datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
-    )
-
-def create_council_info_embed(guild: discord.Guild, chancellor: str, council_members: list) -> discord.Embed:
-    embed = discord.Embed(
-        title="🏛️ The Grand Council",
-        description=f"The Grand Council is the legislative body of **{guild.name}**, consisting of elected "
-                    f"Members of Parliament (MPs) who vote on laws, policies, and constitutional matters. "
-                    f"The Chancellor leads the executive branch and can veto legislation, though the Council "
-                    f"may override with a 2/3 majority.",
-        color=0x2ECC71
-    )
-
-    if guild.icon:
-        embed.set_thumbnail(url=guild.icon.url)
-
-    embed.add_field(
-        name="👑 Current Chancellor",
-        value=chancellor or "None appointed",
-        inline=False
-    )
-
-    if council_members:
-        embed.add_field(
-            name=f"📋 Council Members ({len(council_members)}/12)",
-            value=", ".join(council_members) if len(council_members) <= 12 else ", ".join(council_members[:12]) + "...",
-            inline=False
-        )
-    else:
-        embed.add_field(
-            name="📋 Council Members",
-            value="No councillors currently seated",
-            inline=False
-        )
-
-    embed.set_footer(text="Use /council to join or learn more")
+    embed = discord.Embed(title=f"❌ {title}", description=description, color=0xE74C3C)
+    embed.timestamp = utils.datetime_now()
     return embed
 
-def create_voting_embed(
-    title: str,
-    description: str,
-    voting_type: dict,
-    author: discord.Member,
-    voting_end: datetime,
-    voting_id: Optional[str] = None
-) -> discord.Embed:
+def create_info_embed(title: str, description: str) -> discord.Embed:
+    embed = discord.Embed(title=f"ℹ️ {title}", description=description, color=0x3498DB)
+    embed.timestamp = utils.datetime_now()
+    return embed
+
+def create_election_announcement_embed(guild: discord.Guild, start_time: datetime, end_time: datetime) -> discord.Embed:
+    """Create embed for election announcement"""
     embed = discord.Embed(
-        title=title,
-        description=description,
-        color=voting_type["color"]
+        title="📢 Grand Council Elections Announced!",
+        description=f"**Welcome, citizens of {guild.name}!**\n\n"
+                    f"Elections for the Grand Council have been announced. "
+                    f"This is your opportunity to serve your community or vote for new leadership.\n\n"
+                    f"## 🗳️ Election Timeline\n"
+                    f"### 📝 **Registration Period:** Now until voting begins\n"
+                    f"### 🗳️ **Voting Period:** <t:{int(start_time.timestamp())}:F> to <t:{int(end_time.timestamp())}:F>\n\n"
+                    f"**How to Participate:**\n"
+                    f"• Click '🏛️ Run for Council' below to register as a candidate\n"
+                    f"• Click '✅ Register to Vote' below to register as a voter\n"
+                    f"• You must have been a member for at least 30 days to vote\n"
+                    f"• Maximum of 9 candidates can run per election",
+        colour=0xF39C12,
+        timestamp=utils.datetime_now()
+    )
+    embed.set_footer(text="Grand Council Elections • Registration is now open")
+    return embed
+
+def create_voting_embed(guild: discord.Guild, election: dict, candidates: list, voters: list) -> discord.Embed:
+    """Create embed for voting phase"""
+    embed = discord.Embed(
+        title="🗳️ Grand Council Elections - Voting Now Open",
+        description=f"**Welcome, citizens of {guild.name}!**\n\n"
+                    f"The voting period has begun for new Grand Council members. "
+                    f"Please review the candidates below and cast your vote.\n\n"
+                    f"**{len(candidates)} candidate{'s' if len(candidates) != 1 else ''}** • "
+                    f"**{len(voters)} registered voter{'s' if len(voters) != 1 else ''}**\n\n"
+                    f"⏰ **Voting Period**\n"
+                    f"From <t:{int(datetime.fromisoformat(election['voting_start']).timestamp())}:F>\n"
+                    f"To <t:{int(datetime.fromisoformat(election['voting_end']).timestamp())}:F>",
+        colour=0x3498DB,
+        timestamp=utils.datetime_now()
     )
 
-    embed.set_author(
-        name=author.display_name,
-        icon_url=author.avatar.url if author.avatar else None
+    for i, candidate in enumerate(candidates):
+        emoji = utils.generate_keycap_emoji(i + 1)
+        embed.add_field(
+            name=f"{emoji} {candidate['name']}",
+            value="Running for Council seat",
+            inline=True
+        )
+
+    embed.set_footer(text="Click a button below to cast your vote • You can vote for up to 2 candidates")
+    return embed
+
+def create_results_embed(guild: discord.Guild, winners: list) -> discord.Embed:
+    """Create embed for election results"""
+    embed = discord.Embed(
+        title="🏆 Grand Council Election Results",
+        description=f"**Attention, citizens of {guild.name}!**\n\n"
+                    f"The election has concluded. Here are your newly elected Grand Council members:",
+        colour=0x2ECC71,
+        timestamp=utils.datetime_now()
     )
 
-    embed.add_field(
-        name="📊 Type",
-        value=f"{voting_type['emoji']} {voting_type['text']}",
-        inline=True
+    for i, winner in enumerate(winners):
+        emoji = utils.generate_keycap_emoji(i + 1)
+        vote_text = f"{winner['votes']} vote{'s' if winner['votes'] != 1 else ''}"
+        embed.add_field(
+            name=f"{emoji} {winner['name']}",
+            value=f"✅ Elected with {vote_text}",
+            inline=False
+        )
+
+    embed.set_footer(text="Congratulations to the winners! 🎉")
+    return embed
+
+def create_voting_proposal_embed(title: str, description: str, voting_type_data: dict, author: discord.Member, voting_end: datetime, voting_id: str = None) -> discord.Embed:
+    """Create embed for a voting proposal"""
+    embed = discord.Embed(
+        title=f"{voting_type_data['emoji']} {voting_type_data['name']}",
+        description=f"## {title}\n\n{description}\n\n"
+                    f"### 📊 Voting Information\n"
+                    f"**Proposed by:** {author.mention}\n"
+                    f"**Voting Ends:** <t:{int(voting_end.timestamp())}:R> (<t:{int(voting_end.timestamp())}:F>)\n"
+                    f"**Required Approval:** {int(voting_type_data['required_percentage'] * 100)}%\n\n"
+                    f"### 🗳️ How to Vote\n"
+                    f"Click the buttons below to cast your vote. Your vote is **anonymous** and can only be cast once.",
+        color=0x3498DB,
+        timestamp=utils.datetime_now()
     )
 
-    embed.add_field(
-        name="⏰ Ends",
-        value=f"<t:{int(voting_end.timestamp())}:R>",
-        inline=True
-    )
-
-    embed.add_field(
-        name="✅ Required",
-        value=f"{voting_type['required_percentage']*100:.0f}%",
-        inline=True
-    )
-
-    footer_text = f"Vote ends: {voting_end.strftime('%d.%m.%Y %H:%M')} UTC"
+    footer_text = f"Vote Type: {voting_type_data['description']}"
     if voting_id:
-        footer_text += f" | ID: {voting_id}"
-
+        footer_text += f" • ID: {voting_id}"
     embed.set_footer(text=footer_text)
+
     return embed
 
-def create_voting_result_embed(
-    title: str,
-    description: str,
-    passed: bool,
-    positive_votes: int,
-    negative_votes: int,
-    required_percentage: float,
-    proposer_name: Optional[str] = None
-) -> discord.Embed:
-    color = 0x00FF00 if passed else 0xFF0000
-    result_emoji = "✅" if passed else "❌"
+def create_voting_result_embed(title: str, description: str, passed: bool, votes_for: int, votes_against: int, required_percentage: float, proposer_name: str = None) -> discord.Embed:
+    """Create embed for voting results"""
+    total_votes = votes_for + votes_against
+    percentage = (votes_for / total_votes * 100) if total_votes > 0 else 0
 
     embed = discord.Embed(
-        title=f"{result_emoji} {title}",
-        description=description,
-        color=color
+        title=f"{'✅ Proposal Passed' if passed else '❌ Proposal Failed'}",
+        description=f"**{title}**\n\n{description[:200]}...",
+        color=0x2ECC71 if passed else 0xE74C3C,
+        timestamp=utils.datetime_now()
     )
 
-    total = positive_votes + negative_votes
-    for_percentage = (positive_votes / total * 100) if total > 0 else 0
+    embed.add_field(name="✅ For", value=str(votes_for), inline=True)
+    embed.add_field(name="❌ Against", value=str(votes_against), inline=True)
+    embed.add_field(name="📊 Total", value=str(total_votes), inline=True)
 
     embed.add_field(
-        name="📊 Final Result",
-        value=f"**{'PASSED' if passed else 'FAILED'}**",
+        name="📈 Result",
+        value=f"{percentage:.1f}% approval (needed {int(required_percentage * 100)}%)",
         inline=False
-    )
-
-    embed.add_field(
-        name="✅ For",
-        value=f"{positive_votes} ({for_percentage:.1f}%)",
-        inline=True
-    )
-
-    embed.add_field(
-        name="❌ Against",
-        value=f"{negative_votes} ({100-for_percentage:.1f}%)",
-        inline=True
-    )
-
-    embed.add_field(
-        name="📈 Required",
-        value=f"{required_percentage*100:.0f}%",
-        inline=True
     )
 
     if proposer_name:
@@ -155,92 +136,72 @@ def create_voting_result_embed(
 
     return embed
 
-def create_election_announcement_embed(
-    guild: discord.Guild,
-    start_time: datetime,
-    end_time: datetime
-) -> discord.Embed:
+def create_council_info_embed(guild: discord.Guild, chancellor: str, council_members: list) -> discord.Embed:
+    """Create embed for council information"""
     embed = discord.Embed(
-        title="📢 Election Announcement",
-        description=f"**Attention citizens of {guild.name}!**\n\n"
-                    f"Elections for the Grand Council are approaching! This is your opportunity to shape "
-                    f"the future of our community by running for office or voting for your preferred candidates.\n\n"
-                    f"**Campaign Period:** Now until voting begins\n"
-                    f"**Voting Period:** <t:{int(start_time.timestamp())}:F> to <t:{int(end_time.timestamp())}:F>",
-        color=0x3498DB
+        title=f"🏛️ {guild.name} Grand Council",
+        description="Current members of the Grand Council and leadership",
+        color=0x3498DB,
+        timestamp=utils.datetime_now()
     )
 
     embed.add_field(
-        name="🚀 How to Participate",
-        value="• **Register to Vote**: Click the 🗳️ button below\n"
-              "• **Run for Office**: Click the 🚀 button to become a candidate\n"
-              "• **Campaign**: Share your vision with the community!",
+        name="👑 Chancellor",
+        value=chancellor if chancellor else "*None appointed*",
         inline=False
     )
 
-    embed.add_field(
-        name="📜 Requirements",
-        value="• Must be a server member for at least 1 month\n"
-              "• Maximum 9 candidates per election\n"
-              "• Anonymous voting system",
-        inline=False
-    )
-
-    embed.set_footer(text="Democracy in action! 🗳️")
-    return embed
-
-def create_ministerial_appointment_embed(
-    member: discord.Member,
-    position: str,
-    appointed_by: discord.Member,
-    is_removal: bool = False
-) -> discord.Embed:
-    if is_removal:
-        embed = discord.Embed(
-            title="🏛️ Ministerial Change",
-            description=f"**{member.mention}** has been removed from the position of **{position}**",
-            color=0xE74C3C
+    if council_members:
+        embed.add_field(
+            name=f"🎖️ Council Members ({len(council_members)})",
+            value="\n".join(council_members) if len(council_members) <= 25 else "\n".join(council_members[:25]) + f"\n*...and {len(council_members) - 25} more*",
+            inline=False
         )
     else:
-        embed = discord.Embed(
-            title="🏛️ Ministerial Appointment",
-            description=f"**{member.mention}** has been appointed as **{position}**",
-            color=0xF39C12
+        embed.add_field(
+            name="🎖️ Council Members",
+            value="*No members elected*",
+            inline=False
         )
 
-    embed.add_field(
-        name="Appointed By",
-        value=appointed_by.mention,
-        inline=True
-    )
-
-    if member.avatar:
-        embed.set_thumbnail(url=member.avatar.url)
-
+    embed.set_footer(text="Grand Council of " + guild.name)
     return embed
 
-def create_emergency_embed(
-    title: str,
-    description: str,
-    president: discord.Member,
-    additional_fields: Optional[dict] = None
-) -> discord.Embed:
+def create_ministry_list_embed(guild: discord.Guild, ministries: list) -> discord.Embed:
+    """Create embed for ministry list"""
     embed = discord.Embed(
-        title=f"🚨 {title}",
-        description=description,
-        color=0xE74C3C
+        title=f"🏛️ {guild.name} Ministries",
+        description="Current ministries and their leadership",
+        color=0x9B59B6,
+        timestamp=utils.datetime_now()
     )
 
-    embed.add_field(
-        name="🎖️ Declared By",
-        value=president.mention,
-        inline=True
-    )
+    if not ministries:
+        embed.description = "No ministries have been created yet."
+        return embed
 
-    if additional_fields:
-        for name, value in additional_fields.items():
-            embed.add_field(name=name, value=value, inline=False)
+    for ministry in ministries:
+        minister = f"<@{ministry['minister_id']}>" if ministry.get('minister_id') else "*Vacant*"
+        deputy = f"<@{ministry['deputy_minister_id']}>" if ministry.get('deputy_minister_id') else "*Vacant*"
+        role = f"<@&{ministry['role_id']}>" if ministry.get('role_id') else "*No role*"
 
-    embed.set_footer(text="⚠️ Emergency powers in effect - Constitution Article 7")
+        value = f"**Minister:** {minister}\n**Deputy:** {deputy}\n**Role:** {role}"
+
+        embed.add_field(
+            name=f"📁 {ministry['name']}",
+            value=value,
+            inline=False
+        )
+
+    embed.set_footer(text=f"Total Ministries: {len(ministries)}")
     return embed
 
+# Legacy compatibility
+def success_embed(title: str, description: str) -> discord.Embed:
+    return create_success_embed(title, description)
+
+def error_embed(title: str, description: str) -> discord.Embed:
+    return create_error_embed(title, description)
+
+def info_embed(title: str, description: str) -> discord.Embed:
+    return create_info_embed(title, description)

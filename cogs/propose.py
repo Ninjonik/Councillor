@@ -9,7 +9,7 @@ from discord.ext import commands
 from utils.database import DatabaseHelper
 from utils.permissions import check_councillor
 from utils.errors import handle_interaction_error
-from utils.formatting import create_success_message, create_embed, format_timestamp
+from utils.formatting import create_success_message, create_embed, format_timestamp, create_error_message
 from utils.helpers import calculate_voting_end_date
 from utils.enums import VotingType, VotingStatus, VOTING_TYPE_CONFIG
 
@@ -37,7 +37,6 @@ class VotingView(discord.ui.View):
         try:
             from utils.permissions import is_eligible
             from utils.enums import RoleType, LogType
-            from utils.formatting import create_error_message
 
             # Check if user is a councillor
             if not await is_eligible(interaction.user, interaction.guild, RoleType.COUNCILLOR, self.db_helper):

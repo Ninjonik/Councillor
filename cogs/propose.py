@@ -71,7 +71,8 @@ class VotingView(discord.ui.View):
             await self.db_helper.cast_vote(
                 voting_id=voting_id,
                 stance=stance,
-                councillor_id=councillor['$id']
+                councillor_id=councillor['$id'],
+                discord_id=interaction.user.id
             )
 
             # Log the vote
@@ -207,7 +208,7 @@ class Propose(commands.Cog):
 
             message = await voting_channel.send(content=content, embed=embed, view=view)
 
-            # Create voting record
+            # Create voting record with message ID as document ID
             voting = await self.db_helper.create_voting(
                 voting_type=vtype,
                 title=title,

@@ -192,7 +192,7 @@ async def handle_app_command_error(interaction: discord.Interaction, error: Exce
         await interaction.response.send_message("❌ The resource you are trying to create already exists.", ephemeral=True)
 
     elif isinstance(error, InvalidInputError):
-        await interaction.response.send_message("❌ The provided input is invalid.", ephemeral=True)
+        await interaction.response.send_message(f"❌ The provided input is invalid. {error}", ephemeral=True)
 
     elif isinstance(error, GuildNotSetupError):
         await interaction.response.send_message("❌ This server is not properly set up. Please contact an administrator.", ephemeral=True)

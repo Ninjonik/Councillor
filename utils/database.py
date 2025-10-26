@@ -486,6 +486,35 @@ class DatabaseHelper:
         )
         return result['documents']
 
+    async def get_candidate(self, candidate_id: str) -> Optional[Dict[str, Any]]:
+        """Get a candidate by ID"""
+        try:
+            return self.db.get_document(
+                database_id=self.db_id,
+                collection_id='election_candidates',
+                document_id=candidate_id
+            )
+        except AppwriteException:
+            return None
+
+    async def update_candidate(self, candidate_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update candidate data"""
+        return self.db.update_document(
+            database_id=self.db_id,
+            collection_id='election_candidates',
+            document_id=candidate_id,
+            data=data
+        )
+
+    async def update_voter(self, voter_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update voter data"""
+        return self.db.update_document(
+            database_id=self.db_id,
+            collection_id='registered_voters',
+            document_id=voter_id,
+            data=data
+        )
+
     # ============================================
     # Logging Operations
     # ============================================
@@ -522,4 +551,3 @@ class DatabaseHelper:
             )
         except AppwriteException:
             return None
-

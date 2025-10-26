@@ -74,14 +74,23 @@ async def update_votings():
 
     try:
         # Get all votings that have ended
-        all_votings = databases.list_documents(
-            database_id=config.APPWRITE_DB_NAME,
-            collection_id='votings',
-            queries=[
-                Query.equal('status', VotingStatus.VOTING.value),
-                Query.less_than_equal("voting_end", current_datetime.isoformat()),
-            ]
-        )
+        if config.DEBUG_MODE:
+            all_votings = databases.list_documents(
+                database_id=config.APPWRITE_DB_NAME,
+                collection_id='votings',
+                queries=[
+                    Query.equal('status', VotingStatus.VOTING.value),
+                ]
+            )
+        else:
+            all_votings = databases.list_documents(
+                database_id=config.APPWRITE_DB_NAME,
+                collection_id='votings',
+                queries=[
+                    Query.equal('status', VotingStatus.VOTING.value),
+                    Query.less_than_equal("voting_end", current_datetime.isoformat()),
+                ]
+            )
 
         votings = all_votings["documents"]
         log(f"Found {len(votings)} votings to process", "INFO")

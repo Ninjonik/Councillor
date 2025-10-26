@@ -10,6 +10,30 @@ def datetime_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def parse_iso_datetime(iso_str: str) -> Optional[datetime]:
+    """
+    Parse an ISO format datetime string from the database
+
+    Args:
+        iso_str: ISO format datetime string
+
+    Returns:
+        Datetime object or None if invalid
+    """
+    if not iso_str:
+        return None
+
+    try:
+        # Handle ISO format strings from Appwrite
+        dt = datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
+        # Ensure UTC timezone
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, AttributeError):
+        return None
+
+
 def convert_datetime_from_str(datetime_str: str) -> Optional[datetime]:
     """
     Convert a datetime string to a datetime object
@@ -64,11 +88,11 @@ def calculate_voting_end_date(voting_days: int, after_noon: bool = False) -> dat
 
 
 def generate_keycap_emoji(number: int) -> str:
-    """Generate a keycap emoji for a number (1-9)"""
-    keycap_emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣']
-    if 1 <= number <= 9:
-        return keycap_emojis[number - 1]
-    return str(number)
+    """Generate a keycap emoji for a number (0-24) for display text"""
+    keycap_emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟']
+    if 0 <= number <= 9:
+        return keycap_emojis[number]
+    return f"#{number + 1}"
 
 
 def seconds_until(hours: int, minutes: int) -> float:
@@ -140,4 +164,3 @@ def format_duration(seconds: float) -> str:
     d = int(days)
     h = int((days - d) * 24)
     return f"{d}d {h}h"
-

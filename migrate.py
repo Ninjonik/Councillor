@@ -15,6 +15,7 @@ import sys
 try:
     import config
 except ImportError:
+    config = None  # satisfy linters; we exit immediately below
     print(f"{Fore.RED}✗ Error: 'config' module not found. Please create a config.py file with APPWRITE_ENDPOINT, APPWRITE_PROJECT, APPWRITE_KEY, and APPWRITE_DB_NAME.{Style.RESET_ALL}")
     sys.exit(1)
 
@@ -92,7 +93,8 @@ def purge_collections(database_id):
             db.delete_collection(database_id=database_id, collection_id=collection_id)
             log.success(f"Deleted collection: {collection_id}")
         except AppwriteException as e:
-            if "not found" in str(e).lower() or "404" in str(e):
+            msg = str(e).lower()
+            if "not found" in msg or "could not be found" in msg or "404" in msg:
                 log.info(f"Collection not found (skipping): {collection_id}")
             else:
                 log.warning(f"Error deleting collection {collection_id}: {str(e)}")
@@ -107,8 +109,9 @@ def create_collections(database_id):
                 {"key": "guild_id", "type": "string", "size": 36, "required": True},
                 {"key": "name", "type": "string", "size": 256, "required": True},
                 {"key": "description", "type": "string", "size": 1024, "required": False},
-                {"key": "enabled", "type": "boolean", "required": True, "default": True},
-                {"key": "logging_enabled", "type": "boolean", "required": True, "default": True},
+                # Defaults cannot be set on required attributes in Appwrite
+                {"key": "enabled", "type": "boolean", "required": False, "default": True},
+                {"key": "logging_enabled", "type": "boolean", "required": False, "default": True},
                 {"key": "voting_channel_id", "type": "string", "size": 36, "required": False},
                 {"key": "announcement_channel_id", "type": "string", "size": 36, "required": False},
                 {"key": "councillor_role_id", "type": "string", "size": 36, "required": False},
@@ -118,8 +121,8 @@ def create_collections(database_id):
                 {"key": "vice_president_role_id", "type": "string", "size": 36, "required": False},
                 {"key": "judiciary_role_id", "type": "string", "size": 36, "required": False},
                 {"key": "citizen_role_id", "type": "string", "size": 36, "required": False},
-                {"key": "days_requirement", "type": "integer", "required": True, "default": 180},
-                {"key": "max_councillors", "type": "integer", "required": True, "default": 9},
+                {"key": "days_requirement", "type": "integer", "required": False, "default": 180},
+                {"key": "max_councillors", "type": "integer", "required": False, "default": 9},
             ]
         },
         {
@@ -129,7 +132,7 @@ def create_collections(database_id):
                 {"key": "council_id", "type": "string", "size": 50, "required": True},
                 {"key": "guild_id", "type": "string", "size": 36, "required": True},
                 {"key": "current_chancellor_id", "type": "string", "size": 36, "required": False},
-                {"key": "election_in_progress", "type": "boolean", "required": True, "default": False},
+                {"key": "election_in_progress", "type": "boolean", "required": False, "default": False},
             ]
         },
         {
@@ -140,8 +143,8 @@ def create_collections(database_id):
                 {"key": "name", "type": "string", "size": 256, "required": True},
                 {"key": "council_id", "type": "string", "size": 50, "required": True},
                 {"key": "joined_at", "type": "datetime", "required": True},
-                {"key": "active", "type": "boolean", "required": True, "default": True},
-                {"key": "is_chancellor", "type": "boolean", "required": True, "default": False},
+                {"key": "active", "type": "boolean", "required": False, "default": True},
+                {"key": "is_chancellor", "type": "boolean", "required": False, "default": False},
                 {"key": "ministry_ids", "type": "string", "size": 100, "required": False, "array": True},
             ]
         },
@@ -156,7 +159,7 @@ def create_collections(database_id):
                 {"key": "role_ids", "type": "string", "size": 100, "required": False, "array": True},
                 {"key": "created_by", "type": "string", "size": 36, "required": False},
                 {"key": "created_at", "type": "datetime", "required": True},
-                {"key": "active", "type": "boolean", "required": True, "default": True},
+                {"key": "active", "type": "boolean", "required": False, "default": True},
             ]
         },
         {
@@ -172,8 +175,8 @@ def create_collections(database_id):
                 {"key": "message_id", "type": "string", "size": 36, "required": False},
                 {"key": "voting_start", "type": "datetime", "required": False},
                 {"key": "voting_end", "type": "datetime", "required": True},
-                {"key": "required_percentage", "type": "float", "required": True, "default": 0.5},
-                {"key": "result_announced", "type": "boolean", "required": True, "default": False},
+                {"key": "required_percentage", "type": "float", "required": False, "default": 0.5},
+                {"key": "result_announced", "type": "boolean", "required": False, "default": False},
             ]
         },
         {
@@ -196,8 +199,8 @@ def create_collections(database_id):
                 {"key": "discord_id", "type": "string", "size": 36, "required": True},
                 {"key": "name", "type": "string", "size": 256, "required": True},
                 {"key": "registered_at", "type": "datetime", "required": True},
-                {"key": "vote_count", "type": "integer", "required": True, "default": 0},
-                {"key": "elected", "type": "boolean", "required": True, "default": False},
+                {"key": "vote_count", "type": "integer", "required": False, "default": 0},
+                {"key": "elected", "type": "boolean", "required": False, "default": False},
             ]
         },
         {
@@ -208,7 +211,7 @@ def create_collections(database_id):
                 {"key": "discord_id", "type": "string", "size": 36, "required": True},
                 {"key": "name", "type": "string", "size": 256, "required": True},
                 {"key": "registered_at", "type": "datetime", "required": True},
-                {"key": "has_voted", "type": "boolean", "required": True, "default": False},
+                {"key": "has_voted", "type": "boolean", "required": False, "default": False},
             ]
         },
         {
@@ -220,7 +223,7 @@ def create_collections(database_id):
                 {"key": "type", "type": "enum", "elements": ['string', 'integer', 'boolean', 'json', 'array'], "required": True},
                 {"key": "description", "type": "string", "size": 512, "required": False},
                 {"key": "guild_id", "type": "string", "size": 36, "required": False},
-                {"key": "editable_by", "type": "enum", "elements": ['admin', 'chancellor', 'president'], "required": True, "default": 'admin'},
+                {"key": "editable_by", "type": "enum", "elements": ['admin', 'chancellor', 'president'], "required": False, "default": 'admin'},
             ]
         },
         {
@@ -233,7 +236,7 @@ def create_collections(database_id):
                 {"key": "discord_id", "type": "string", "size": 36, "required": False},
                 {"key": "details", "type": "string", "size": 4096, "required": False},
                 {"key": "timestamp", "type": "datetime", "required": True},
-                {"key": "severity", "type": "enum", "elements": ['debug', 'info', 'warning', 'error', 'critical'], "required": True, "default": 'info'},
+                {"key": "severity", "type": "enum", "elements": ['debug', 'info', 'warning', 'error', 'critical'], "required": False, "default": 'info'},
             ]
         }
     ]
@@ -265,6 +268,7 @@ def create_collections(database_id):
 
             # Create attributes
             for attr in collection_data["attributes"]:
+                key_name = attr.get("key", "<unknown>")
                 try:
                     attr_copy = attr.copy()
                     attr_type = attr_copy.pop("type")
@@ -281,12 +285,12 @@ def create_collections(database_id):
                         db.create_float_attribute(database_id, collection_data["id"], **attr_copy)
                     elif attr_type == "enum":
                         db.create_enum_attribute(database_id, collection_data["id"], **attr_copy)
-                    log.success(f"  Created attribute: {attr_copy['key']}")
+                    log.success(f"  Created attribute: {key_name}")
                 except AppwriteException as e:
                     if "already exists" in str(e).lower():
-                        log.warning(f"  Attribute exists: {attr_copy['key']}")
+                        log.warning(f"  Attribute exists: {key_name}")
                     else:
-                        log.error(f"  Error creating attribute {attr_copy['key']}: {str(e)}")
+                        log.error(f"  Error creating attribute {key_name}: {str(e)}")
         except AppwriteException as e:
             log.error(f"Error creating collection {collection_data['name']}: {str(e)}")
 

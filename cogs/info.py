@@ -271,7 +271,7 @@ class Information(commands.Cog):
                     "`/set_channel` - Configure channels",
                     "`/set_requirement` - Set participation requirements",
                     "`/toggle_bot` - Enable/disable the bot",
-                    "`/elections` - Manage elections"
+                    "`/announce_election` - Announce council elections"
                 ]
 
                 embed.add_field(

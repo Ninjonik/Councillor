@@ -87,70 +87,70 @@ async def handle_command_error(ctx: commands.Context, error: Exception):
 
     # Handle custom errors
     if isinstance(error, NotCouncillorError):
-        await ctx.send("❌ You must be a councillor to use this command.", ephemeral=True)
+        await ctx.send("❌ You must be a councillor to use this command.")
 
     elif isinstance(error, NotChancellorError):
-        await ctx.send("❌ You must be the chancellor to use this command.", ephemeral=True)
+        await ctx.send("❌ You must be the chancellor to use this command.")
 
     elif isinstance(error, NotAdminError):
-        await ctx.send("❌ You must be an admin to use this command.", ephemeral=True)
+        await ctx.send("❌ You must be an admin to use this command.")
 
     elif isinstance(error, PermissionError):
-        await ctx.send("❌ You lack the required permissions to use this command.", ephemeral=True)
+        await ctx.send("❌ You lack the required permissions to use this command.")
 
     elif isinstance(error, NotEligibleError):
-        await ctx.send("❌ You are not eligible to perform this action.", ephemeral=True)
+        await ctx.send("❌ You are not eligible to perform this action.")
 
     elif isinstance(error, NotFoundError):
-        await ctx.send("❌ The requested resource was not found.", ephemeral=True)
+        await ctx.send("❌ The requested resource was not found.")
 
     elif isinstance(error, AlreadyExistsError):
-        await ctx.send("❌ The resource you are trying to create already exists.", ephemeral=True)
+        await ctx.send("❌ The resource you are trying to create already exists.")
 
     elif isinstance(error, InvalidInputError):
-        await ctx.send("❌ The provided input is invalid.", ephemeral=True)
+        await ctx.send("❌ The provided input is invalid.")
 
     elif isinstance(error, GuildNotSetupError):
-        await ctx.send("❌ This server is not properly set up. Please contact an administrator.", ephemeral=True)
+        await ctx.send("❌ This server is not properly set up. Please contact an administrator.")
 
     elif isinstance(error, VotingNotFoundError):
-        await ctx.send("❌ Voting not found.", ephemeral=True)
+        await ctx.send("❌ Voting not found.")
 
     elif isinstance(error, AlreadyVotedError):
-        await ctx.send("❌ You have already voted.", ephemeral=True)
+        await ctx.send("❌ You have already voted.")
 
     elif isinstance(error, ElectionInProgressError):
-        await ctx.send("❌ An election is already in progress.", ephemeral=True)
+        await ctx.send("❌ An election is already in progress.")
 
     # Handle built-in command errors
     elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"❌ Missing required argument: `{error.param.name}`", ephemeral=True)
+        await ctx.send(f"❌ Missing required argument: `{error.param.name}`")
 
     elif isinstance(error, commands.BadArgument):
-        await ctx.send(f"❌ Invalid argument: {error}", ephemeral=True)
+        await ctx.send(f"❌ Invalid argument: {error}")
 
     elif isinstance(error, commands.MissingPermissions):
         perms = ", ".join(error.missing_permissions)
-        await ctx.send(f"❌ You are missing required permissions: {perms}", ephemeral=True)
+        await ctx.send(f"❌ You are missing required permissions: {perms}")
 
     elif isinstance(error, commands.BotMissingPermissions):
         perms = ", ".join(error.missing_permissions)
-        await ctx.send(f"❌ I am missing required permissions: {perms}", ephemeral=True)
+        await ctx.send(f"❌ I am missing required permissions: {perms}")
 
     elif isinstance(error, commands.CommandNotFound):
         # Silently ignore command not found errors
         pass
 
     elif isinstance(error, commands.CommandOnCooldown):
-        await ctx.send(f"❌ This command is on cooldown. Try again in {error.retry_after:.1f} seconds.", ephemeral=True)
+        await ctx.send(f"❌ This command is on cooldown. Try again in {error.retry_after:.1f} seconds.")
 
     elif isinstance(error, commands.NoPrivateMessage):
-        await ctx.send("❌ This command cannot be used in private messages.", ephemeral=True)
+        await ctx.send("❌ This command cannot be used in private messages.")
 
     # Handle any other errors
     else:
         error_msg = f"❌ An error occurred: {str(error)}"
-        await ctx.send(error_msg, ephemeral=True)
+        await ctx.send(error_msg)
 
         # Log the full traceback
         print(f"Error in command {ctx.command}:")

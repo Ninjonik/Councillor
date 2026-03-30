@@ -71,7 +71,8 @@ class VotingView(discord.ui.View):
             await self.db_helper.cast_vote(
                 voting_id=voting_id,
                 stance=stance,
-                councillor_id=councillor['$id']
+                councillor_id=councillor['$id'],
+                discord_id=interaction.user.id,
             )
 
             # Log the vote

@@ -10,13 +10,13 @@ from colorama import Fore
 from datetime import datetime, timezone
 
 import config
-from utils.database import DatabaseHelper
+from utils.database import DatabaseHelper, row_to_doc, wrap_list_rows
 from utils.helpers import datetime_now, seconds_until
 from utils.enums import VotingStatus, VotingType, VOTING_TYPE_CONFIG
 from utils.formatting import format_voting_result, format_timestamp, create_embed
 from utils.errors import handle_command_error
 from appwrite.client import Client as AppwriteClient
-from appwrite.services.databases import Databases
+from appwrite.services.tables_db import TablesDB
 from appwrite.query import Query
 
 
@@ -29,8 +29,8 @@ appwrite_client.set_endpoint(config.APPWRITE_ENDPOINT)
 appwrite_client.set_project(config.APPWRITE_PROJECT)
 appwrite_client.set_key(config.APPWRITE_KEY)
 
-databases = Databases(appwrite_client)
-db_helper = DatabaseHelper(databases)
+tables_db = TablesDB(appwrite_client)
+db_helper = DatabaseHelper(tables_db)
 
 
 # ============================================
@@ -73,16 +73,38 @@ async def update_votings():
     current_datetime = datetime_now()
 
     try:
-        # Get all votings that have ended
-        all_votings = databases.list_documents(
+        # Activate scheduled elections/proposals that were pending until voting_start
+        pending_result = tables_db.list_rows(
             database_id=config.APPWRITE_DB_NAME,
-            collection_id='votings',
-            queries=[
-                Query.equal('status', VotingStatus.VOTING.value),
-                Query.less_than_equal("voting_end", current_datetime.isoformat()),
-            ]
+            table_id="votings",
+            queries=[Query.equal("status", VotingStatus.PENDING.value)],
         )
+        for row in pending_result.rows:
+            doc = row_to_doc(row)
+            vs = doc.get("voting_start")
+            if not vs:
+                continue
+            try:
+                start_dt = datetime.fromisoformat(vs.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if start_dt <= current_datetime:
+                await db_helper.update_voting(
+                    doc["$id"],
+                    {"status": VotingStatus.VOTING.value},
+                )
+                log(f"Activated voting {doc['$id']} (pending → voting)", "INFO")
 
+        # Get all votings that have ended (status must be voting)
+        ended = tables_db.list_rows(
+            database_id=config.APPWRITE_DB_NAME,
+            table_id="votings",
+            queries=[
+                Query.equal("status", VotingStatus.VOTING.value),
+                Query.less_than_equal("voting_end", current_datetime.isoformat()),
+            ],
+        )
+        all_votings = wrap_list_rows(ended)
         votings = all_votings["documents"]
         log(f"Found {len(votings)} votings to process", "INFO")
 

@@ -1,18 +1,7 @@
-#!/usr/bin/env python3
-"""
-Database migration — creates Appwrite TablesDB tables for Councillor.
-Run once against your project (requires API key with databases scope).
-
-Uses appwrite Client raw HTTP (``client.call``) for database/table management so migration
-works on Appwrite 1.8.x even when SDK 17’s typed parsers expect newer API fields
-(e.g. ``policies`` / ``archives`` on databases).
-
-Uses appwrite>=17 (for ``Client``). Destructive: full purge of existing tables when confirmed.
-"""
-
 from __future__ import annotations
 
 import sys
+import time
 
 from appwrite.client import Client
 from appwrite.exception import AppwriteException
@@ -51,14 +40,8 @@ class Logger:
 log = Logger()
 
 VOTE_TYPE_ELEMENTS = [
-    "legislation",
-    "amendment",
-    "impeachment",
-    "confidence_vote",
-    "decree",
-    "other",
-    "election",
-    "chancellor_election",
+    "legislation", "amendment", "impeachment", "confidence_vote",
+    "decree", "other", "election", "chancellor_election",
 ]
 STATUS_ELEMENTS = ["pending", "voting", "passed", "failed", "cancelled"]
 SETTING_TYPE_ELEMENTS = ["string", "integer", "boolean", "json", "array"]
@@ -71,22 +54,22 @@ TABLE_SPECS: list[dict] = [
         "id": "guilds",
         "name": "Guilds",
         "columns": [
-            {"key": "guild_id", "type": "varchar", "size": 36, "required": True},
-            {"key": "name", "type": "varchar", "size": 256, "required": True},
-            {"key": "description", "type": "varchar", "size": 1024, "required": False},
-            {"key": "enabled", "type": "boolean", "required": True, "default": True},
-            {"key": "logging_enabled", "type": "boolean", "required": True, "default": True},
-            {"key": "voting_channel_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "announcement_channel_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "councillor_role_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "chancellor_role_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "minister_role_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "president_role_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "vice_president_role_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "judiciary_role_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "citizen_role_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "days_requirement", "type": "integer", "required": True, "default": 180},
-            {"key": "max_councillors", "type": "integer", "required": True, "default": 9},
+            {"key": "guild_id",                 "type": "varchar",  "size": 36,   "required": True},
+            {"key": "name",                     "type": "varchar",  "size": 256,  "required": True},
+            {"key": "description",              "type": "varchar",  "size": 1024, "required": False},
+            {"key": "enabled",                  "type": "boolean",                "required": True,  "default": True},
+            {"key": "logging_enabled",          "type": "boolean",                "required": True,  "default": True},
+            {"key": "voting_channel_id",        "type": "varchar",  "size": 36,   "required": False},
+            {"key": "announcement_channel_id",  "type": "varchar",  "size": 36,   "required": False},
+            {"key": "councillor_role_id",       "type": "varchar",  "size": 36,   "required": False},
+            {"key": "chancellor_role_id",       "type": "varchar",  "size": 36,   "required": False},
+            {"key": "minister_role_id",         "type": "varchar",  "size": 36,   "required": False},
+            {"key": "president_role_id",        "type": "varchar",  "size": 36,   "required": False},
+            {"key": "vice_president_role_id",   "type": "varchar",  "size": 36,   "required": False},
+            {"key": "judiciary_role_id",        "type": "varchar",  "size": 36,   "required": False},
+            {"key": "citizen_role_id",          "type": "varchar",  "size": 36,   "required": False},
+            {"key": "days_requirement",         "type": "integer",                "required": True,  "default": 180},
+            {"key": "max_councillors",          "type": "integer",                "required": True,  "default": 9},
         ],
         "indexes": [{"key": "idx_guild_id", "type": "unique", "attributes": ["guild_id"]}],
     },
@@ -94,45 +77,45 @@ TABLE_SPECS: list[dict] = [
         "id": "councils",
         "name": "Councils",
         "columns": [
-            {"key": "council_id", "type": "varchar", "size": 50, "required": True},
-            {"key": "guild_id", "type": "varchar", "size": 36, "required": True},
-            {"key": "current_chancellor_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "election_in_progress", "type": "boolean", "required": True, "default": False},
+            {"key": "council_id",           "type": "varchar", "size": 50, "required": True},
+            {"key": "guild_id",             "type": "varchar", "size": 36, "required": True},
+            {"key": "current_chancellor_id","type": "varchar", "size": 36, "required": False},
+            {"key": "election_in_progress", "type": "boolean",             "required": True, "default": False},
         ],
         "indexes": [
-            {"key": "idx_council_id", "type": "unique", "attributes": ["council_id"]},
-            {"key": "idx_councils_guild", "type": "key", "attributes": ["guild_id"]},
+            {"key": "idx_council_id",    "type": "unique", "attributes": ["council_id"]},
+            {"key": "idx_councils_guild","type": "key",    "attributes": ["guild_id"]},
         ],
     },
     {
         "id": "councillors",
         "name": "Councillors",
         "columns": [
-            {"key": "discord_id", "type": "varchar", "size": 36, "required": True},
-            {"key": "name", "type": "varchar", "size": 256, "required": True},
-            {"key": "council_id", "type": "varchar", "size": 50, "required": True},
-            {"key": "joined_at", "type": "datetime", "required": True},
-            {"key": "active", "type": "boolean", "required": True, "default": True},
-            {"key": "is_chancellor", "type": "boolean", "required": True, "default": False},
-            {"key": "ministry_ids", "type": "varchar", "size": 100, "required": False, "array": True},
+            {"key": "discord_id",   "type": "varchar",  "size": 36,  "required": True},
+            {"key": "name",         "type": "varchar",  "size": 256, "required": True},
+            {"key": "council_id",   "type": "varchar",  "size": 50,  "required": True},
+            {"key": "joined_at",    "type": "datetime",              "required": True},
+            {"key": "active",       "type": "boolean",               "required": True,  "default": True},
+            {"key": "is_chancellor","type": "boolean",               "required": True,  "default": False},
+            {"key": "ministry_ids", "type": "varchar",  "size": 100, "required": False, "array": True},
         ],
         "indexes": [
             {"key": "idx_councillors_discord_council", "type": "unique", "attributes": ["discord_id", "council_id"]},
-            {"key": "idx_councillors_council", "type": "key", "attributes": ["council_id"]},
+            {"key": "idx_councillors_council",         "type": "key",    "attributes": ["council_id"]},
         ],
     },
     {
         "id": "ministries",
         "name": "Ministries",
         "columns": [
-            {"key": "name", "type": "varchar", "size": 256, "required": True},
-            {"key": "description", "type": "varchar", "size": 1024, "required": False},
-            {"key": "council_id", "type": "varchar", "size": 50, "required": True},
-            {"key": "minister_discord_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "role_ids", "type": "varchar", "size": 36, "required": False, "array": True},
-            {"key": "created_by", "type": "varchar", "size": 36, "required": False},
-            {"key": "created_at", "type": "datetime", "required": True},
-            {"key": "active", "type": "boolean", "required": True, "default": True},
+            {"key": "name",               "type": "varchar",  "size": 256,  "required": True},
+            {"key": "description",        "type": "varchar",  "size": 1024, "required": False},
+            {"key": "council_id",         "type": "varchar",  "size": 50,   "required": True},
+            {"key": "minister_discord_id","type": "varchar",  "size": 36,   "required": False},
+            {"key": "role_ids",           "type": "varchar",  "size": 36,   "required": False, "array": True},
+            {"key": "created_by",         "type": "varchar",  "size": 36,   "required": False},
+            {"key": "created_at",         "type": "datetime",               "required": True},
+            {"key": "active",             "type": "boolean",                "required": True, "default": True},
         ],
         "indexes": [{"key": "idx_ministries_council", "type": "key", "attributes": ["council_id"]}],
     },
@@ -140,85 +123,85 @@ TABLE_SPECS: list[dict] = [
         "id": "votings",
         "name": "Votings",
         "columns": [
-            {"key": "type", "type": "enum", "elements": VOTE_TYPE_ELEMENTS, "required": True},
-            {"key": "status", "type": "enum", "elements": STATUS_ELEMENTS, "required": True},
-            {"key": "title", "type": "varchar", "size": 512, "required": True},
-            {"key": "description", "type": "mediumtext", "required": False},
-            {"key": "council_id", "type": "varchar", "size": 50, "required": True},
-            {"key": "proposer_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "message_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "voting_start", "type": "datetime", "required": False},
-            {"key": "voting_end", "type": "datetime", "required": True},
-            {"key": "required_percentage", "type": "float", "required": True, "default": 0.5},
-            {"key": "result_announced", "type": "boolean", "required": True, "default": False},
+            {"key": "type",                "type": "enum",       "elements": VOTE_TYPE_ELEMENTS, "required": True},
+            {"key": "status",              "type": "enum",       "elements": STATUS_ELEMENTS,    "required": True},
+            {"key": "title",               "type": "varchar",    "size": 512,  "required": True},
+            {"key": "description",         "type": "mediumtext",               "required": False},
+            {"key": "council_id",          "type": "varchar",    "size": 50,   "required": True},
+            {"key": "proposer_id",         "type": "varchar",    "size": 36,   "required": False},
+            {"key": "message_id",          "type": "varchar",    "size": 36,   "required": False},
+            {"key": "voting_start",        "type": "datetime",                 "required": False},
+            {"key": "voting_end",          "type": "datetime",                 "required": True},
+            {"key": "required_percentage", "type": "float",                    "required": True, "default": 0.5},
+            {"key": "result_announced",    "type": "boolean",                  "required": True, "default": False},
         ],
         "indexes": [
             {"key": "idx_votings_council", "type": "key", "attributes": ["council_id"]},
-            {"key": "idx_votings_status", "type": "key", "attributes": ["status"]},
-            {"key": "idx_votings_end", "type": "key", "attributes": ["voting_end"]},
+            {"key": "idx_votings_status",  "type": "key", "attributes": ["status"]},
+            {"key": "idx_votings_end",     "type": "key", "attributes": ["voting_end"]},
         ],
     },
     {
         "id": "votes",
         "name": "Votes",
         "columns": [
-            {"key": "voting_id", "type": "varchar", "size": 36, "required": True},
-            {"key": "councillor_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "discord_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "stance", "type": "boolean", "required": True},
-            {"key": "candidate_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "voted_at", "type": "datetime", "required": True},
+            {"key": "voting_id",     "type": "varchar",  "size": 36, "required": True},
+            {"key": "councillor_id", "type": "varchar",  "size": 36, "required": False},
+            {"key": "discord_id",    "type": "varchar",  "size": 36, "required": False},
+            {"key": "stance",        "type": "boolean",              "required": True},
+            {"key": "candidate_id",  "type": "varchar",  "size": 36, "required": False},
+            {"key": "voted_at",      "type": "datetime",             "required": True},
         ],
         "indexes": [
-            {"key": "idx_votes_voting", "type": "key", "attributes": ["voting_id"]},
-            {"key": "idx_votes_councillor", "type": "key", "attributes": ["councillor_id"]},
-            {"key": "idx_votes_discord", "type": "key", "attributes": ["discord_id"]},
+            {"key": "idx_votes_voting",      "type": "key", "attributes": ["voting_id"]},
+            {"key": "idx_votes_councillor",  "type": "key", "attributes": ["councillor_id"]},
+            {"key": "idx_votes_discord",     "type": "key", "attributes": ["discord_id"]},
         ],
     },
     {
         "id": "election_candidates",
         "name": "Election Candidates",
         "columns": [
-            {"key": "voting_id", "type": "varchar", "size": 36, "required": True},
-            {"key": "discord_id", "type": "varchar", "size": 36, "required": True},
-            {"key": "name", "type": "varchar", "size": 256, "required": True},
-            {"key": "registered_at", "type": "datetime", "required": True},
-            {"key": "vote_count", "type": "integer", "required": True, "default": 0},
-            {"key": "elected", "type": "boolean", "required": True, "default": False},
+            {"key": "voting_id",     "type": "varchar",  "size": 36,  "required": True},
+            {"key": "discord_id",    "type": "varchar",  "size": 36,  "required": True},
+            {"key": "name",          "type": "varchar",  "size": 256, "required": True},
+            {"key": "registered_at", "type": "datetime",              "required": True},
+            {"key": "vote_count",    "type": "integer",               "required": True, "default": 0},
+            {"key": "elected",       "type": "boolean",               "required": True, "default": False},
         ],
         "indexes": [
-            {"key": "idx_ecand_voting", "type": "key", "attributes": ["voting_id"]},
-            {"key": "idx_ecand_voting_discord", "type": "unique", "attributes": ["voting_id", "discord_id"]},
+            {"key": "idx_ecand_voting",        "type": "key",    "attributes": ["voting_id"]},
+            {"key": "idx_ecand_voting_discord","type": "unique", "attributes": ["voting_id", "discord_id"]},
         ],
     },
     {
         "id": "registered_voters",
         "name": "Registered Voters",
         "columns": [
-            {"key": "voting_id", "type": "varchar", "size": 36, "required": True},
-            {"key": "discord_id", "type": "varchar", "size": 36, "required": True},
-            {"key": "name", "type": "varchar", "size": 256, "required": True},
-            {"key": "registered_at", "type": "datetime", "required": True},
-            {"key": "has_voted", "type": "boolean", "required": True, "default": False},
+            {"key": "voting_id",     "type": "varchar",  "size": 36,  "required": True},
+            {"key": "discord_id",    "type": "varchar",  "size": 36,  "required": True},
+            {"key": "name",          "type": "varchar",  "size": 256, "required": True},
+            {"key": "registered_at", "type": "datetime",              "required": True},
+            {"key": "has_voted",     "type": "boolean",               "required": True, "default": False},
         ],
         "indexes": [
-            {"key": "idx_regv_voting", "type": "key", "attributes": ["voting_id"]},
-            {"key": "idx_regv_voting_discord", "type": "unique", "attributes": ["voting_id", "discord_id"]},
+            {"key": "idx_regv_voting",        "type": "key",    "attributes": ["voting_id"]},
+            {"key": "idx_regv_voting_discord","type": "unique", "attributes": ["voting_id", "discord_id"]},
         ],
     },
     {
         "id": "settings",
         "name": "Settings",
         "columns": [
-            {"key": "key", "type": "varchar", "size": 256, "required": True},
-            {"key": "value", "type": "mediumtext", "required": True},
-            {"key": "type", "type": "enum", "elements": SETTING_TYPE_ELEMENTS, "required": True},
-            {"key": "description", "type": "varchar", "size": 512, "required": False},
-            {"key": "guild_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "editable_by", "type": "enum", "elements": EDITABLE_BY_ELEMENTS, "required": True, "default": "admin"},
+            {"key": "key",         "type": "varchar",    "size": 256, "required": True},
+            {"key": "value",       "type": "mediumtext",              "required": True},
+            {"key": "type",        "type": "enum",  "elements": SETTING_TYPE_ELEMENTS, "required": True},
+            {"key": "description", "type": "varchar",    "size": 512, "required": False},
+            {"key": "guild_id",    "type": "varchar",    "size": 36,  "required": False},
+            {"key": "editable_by", "type": "enum",  "elements": EDITABLE_BY_ELEMENTS, "required": True, "default": "admin"},
         ],
         "indexes": [
-            {"key": "idx_settings_key", "type": "key", "attributes": ["key"]},
+            {"key": "idx_settings_key",       "type": "key",    "attributes": ["key"]},
             {"key": "idx_settings_key_guild", "type": "unique", "attributes": ["key", "guild_id"]},
         ],
     },
@@ -226,24 +209,23 @@ TABLE_SPECS: list[dict] = [
         "id": "logs",
         "name": "Logs",
         "columns": [
-            {"key": "guild_id", "type": "varchar", "size": 36, "required": True},
-            {"key": "log_type", "type": "enum", "elements": LOG_TYPE_ELEMENTS, "required": True},
-            {"key": "action", "type": "varchar", "size": 256, "required": True},
-            {"key": "discord_id", "type": "varchar", "size": 36, "required": False},
-            {"key": "details", "type": "mediumtext", "required": False},
-            {"key": "timestamp", "type": "datetime", "required": True},
-            {"key": "severity", "type": "enum", "elements": SEVERITY_ELEMENTS, "required": True, "default": "info"},
+            {"key": "guild_id",  "type": "varchar",  "size": 36,  "required": True},
+            {"key": "log_type",  "type": "enum",  "elements": LOG_TYPE_ELEMENTS,  "required": True},
+            {"key": "action",    "type": "varchar",  "size": 256, "required": True},
+            {"key": "discord_id","type": "varchar",  "size": 36,  "required": False},
+            {"key": "details",   "type": "mediumtext",             "required": False},
+            {"key": "timestamp", "type": "datetime",               "required": True},
+            {"key": "severity",  "type": "enum",  "elements": SEVERITY_ELEMENTS, "required": True, "default": "info"},
         ],
         "indexes": [
             {"key": "idx_logs_guild", "type": "key", "attributes": ["guild_id"]},
-            {"key": "idx_logs_ts", "type": "key", "attributes": ["timestamp"]},
+            {"key": "idx_logs_ts",    "type": "key", "attributes": ["timestamp"]},
         ],
     },
 ]
 
 
 def _database_id_from_config() -> str | None:
-    """Optional explicit database $id (skip discovery)."""
     return getattr(config, "APPWRITE_DATABASE_ID", None) or None
 
 
@@ -274,8 +256,7 @@ def create_or_get_database_raw(client: Client) -> str | None:
     safe_id = name.lower().replace(" ", "_")
     try:
         client.call(
-            "post",
-            "/tablesdb",
+            "post", "/tablesdb",
             {"content-type": "application/json"},
             {"databaseId": safe_id, "name": name},
         )
@@ -289,9 +270,7 @@ def create_or_get_database_raw(client: Client) -> str | None:
             if retry:
                 log.info(f"Database already exists, using ID: {retry}")
                 return retry
-            log.warning(
-                f"Database reported as existing but list did not return it; using ID {safe_id!r}"
-            )
+            log.warning(f"Database reported as existing but list did not return it; using ID {safe_id!r}")
             return safe_id
         log.error(f"Failed to create database: {e!s}")
         return None
@@ -308,12 +287,8 @@ def purge_tables_raw(client: Client, database_id: str) -> None:
         if not tid:
             continue
         try:
-            client.call(
-                "delete",
-                f"/tablesdb/{database_id}/tables/{tid}",
-                {"content-type": "application/json"},
-                {},
-            )
+            client.call("delete", f"/tablesdb/{database_id}/tables/{tid}",
+                        {"content-type": "application/json"}, {})
             log.success(f"Deleted table: {tid}")
         except AppwriteException as e:
             if "not found" in str(e).lower() or "404" in str(e):
@@ -330,26 +305,111 @@ def _table_exists_raw(client: Client, database_id: str, table_id: str) -> bool:
         return False
 
 
+def _create_column(client: Client, database_id: str, table_id: str, col: dict) -> None:
+    key = col["key"]
+    ctype = col["type"]
+    required = col.get("required", False)
+    default = col.get("default", None)
+    is_array = col.get("array", False)
+    headers = {"content-type": "application/json"}
+    base = f"/tablesdb/{database_id}/tables/{table_id}/columns"
+
+    # Appwrite does not allow default + required=True simultaneously.
+    # If a default is set, the column must be required=False.
+    if default is not None and required:
+        required = False
+
+    if ctype == "varchar":
+        body: dict = {"key": key, "size": col["size"], "required": required, "array": is_array}
+        if default is not None:
+            body["default"] = default
+        client.call("post", f"{base}/varchar", headers, body)
+
+    elif ctype in ("text", "mediumtext", "longtext"):
+        body = {"key": key, "required": required, "array": is_array}
+        if default is not None:
+            body["default"] = default
+        client.call("post", f"{base}/{ctype}", headers, body)
+
+    elif ctype == "enum":
+        body = {"key": key, "elements": col["elements"], "required": required, "array": is_array}
+        if default is not None:
+            body["default"] = default
+        client.call("post", f"{base}/enum", headers, body)
+
+    elif ctype == "boolean":
+        body = {"key": key, "required": required, "array": is_array}
+        if default is not None:
+            body["default"] = default
+        client.call("post", f"{base}/boolean", headers, body)
+
+    elif ctype == "integer":
+        body = {"key": key, "required": required, "array": is_array}
+        if default is not None:
+            body["default"] = default
+        client.call("post", f"{base}/integer", headers, body)
+
+    elif ctype == "float":
+        body = {"key": key, "required": required, "array": is_array}
+        if default is not None:
+            body["default"] = default
+        client.call("post", f"{base}/float", headers, body)
+
+    elif ctype == "datetime":
+        body = {"key": key, "required": required, "array": is_array}
+        if default is not None:
+            body["default"] = default
+        client.call("post", f"{base}/datetime", headers, body)
+
+    else:
+        raise ValueError(f"Unknown column type: {ctype!r} for key {key!r}")
+
 def create_tables_raw(client: Client, database_id: str) -> None:
     for spec in TABLE_SPECS:
-        if _table_exists_raw(client, database_id, spec["id"]):
+        table_id = spec["id"]
+
+        if _table_exists_raw(client, database_id, table_id):
             log.warning(f"Table already exists: {spec['name']}")
             continue
+
+        # Step 1: create empty table (no inline columns — avoids type restrictions)
         try:
             client.call(
-                "post",
-                f"/tablesdb/{database_id}/tables",
+                "post", f"/tablesdb/{database_id}/tables",
                 {"content-type": "application/json"},
-                {
-                    "tableId": spec["id"],
-                    "name": spec["name"],
-                    "columns": spec["columns"],
-                    "indexes": spec.get("indexes") or [],
-                },
+                {"tableId": table_id, "name": spec["name"]},
             )
             log.success(f"Created table: {spec['name']}")
         except AppwriteException as e:
             log.error(f"Failed to create table {spec['name']}: {e!s}")
+            continue
+
+        # Brief pause — Appwrite sometimes needs a moment before accepting column writes
+        time.sleep(0.5)
+
+        # Step 2: add columns one by one via typed endpoints
+        for col in spec["columns"]:
+            try:
+                _create_column(client, database_id, table_id, col)
+                log.success(f"  + column {col['key']} ({col['type']})")
+            except AppwriteException as e:
+                log.error(f"  ✗ column {col['key']} on {spec['name']}: {e!s}")
+
+        # Step 3: add indexes
+        for idx in spec.get("indexes") or []:
+            try:
+                client.call(
+                    "post", f"/tablesdb/{database_id}/tables/{table_id}/indexes",
+                    {"content-type": "application/json"},
+                    {
+                        "key": idx["key"],
+                        "type": idx["type"],
+                        "columns": idx["attributes"],  # <-- was "attributes"
+                    },
+                )
+                log.success(f"  + index {idx['key']}")
+            except AppwriteException as e:
+                log.error(f"  ✗ index {idx['key']} on {spec['name']}: {e!s}")
 
 
 if __name__ == "__main__":
@@ -378,9 +438,9 @@ if __name__ == "__main__":
     log.info("\nStep 2: Purge existing tables...")
     purge_tables_raw(client, database_id)
 
-    log.info("\nStep 3: Create tables...")
+    log.info("\nStep 3: Create tables + columns + indexes...")
     create_tables_raw(client, database_id)
 
     log.success("\n" + "=" * 60)
-    log.success("Migration finished (indexes/columns may take a moment to activate).")
+    log.success("Migration finished.")
     log.success("=" * 60)

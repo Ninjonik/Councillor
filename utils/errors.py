@@ -5,7 +5,6 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import traceback
-from typing import Union
 
 
 class CouncillorError(Exception):
@@ -157,6 +156,20 @@ async def handle_command_error(ctx: commands.Context, error: Exception):
         traceback.print_exception(type(error), error, error.__traceback__)
 
 
+async def _safe_interaction_send(interaction: discord.Interaction, message: str, ephemeral: bool = True):
+    """Send an interaction message safely, tolerating expired interactions."""
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=ephemeral)
+        else:
+            await interaction.response.send_message(message, ephemeral=ephemeral)
+    except discord.NotFound:
+        # Interaction token expired or unknown interaction; avoid noisy secondary exceptions.
+        print("Interaction response skipped: token expired or interaction no longer valid.")
+    except discord.HTTPException as send_error:
+        print(f"Failed to send interaction response: {send_error}")
+
+
 async def handle_app_command_error(interaction: discord.Interaction, error: Exception):
     """
     Error handler for application (slash) commands
@@ -171,66 +184,45 @@ async def handle_app_command_error(interaction: discord.Interaction, error: Exce
 
     # Handle custom errors
     if isinstance(error, NotCouncillorError):
-        await interaction.response.send_message("❌ You must be a councillor to use this command.", ephemeral=True)
-
+        error_msg = "❌ You must be a councillor to use this command."
     elif isinstance(error, NotChancellorError):
-        await interaction.response.send_message("❌ You must be the chancellor to use this command.", ephemeral=True)
-
+        error_msg = "❌ You must be the chancellor to use this command."
     elif isinstance(error, NotAdminError):
-        await interaction.response.send_message("❌ You must be an admin to use this command.", ephemeral=True)
-
+        error_msg = "❌ You must be an admin to use this command."
     elif isinstance(error, PermissionError):
-        await interaction.response.send_message("❌ You lack the required permissions to use this command.", ephemeral=True)
-
+        error_msg = "❌ You lack the required permissions to use this command."
     elif isinstance(error, NotEligibleError):
-        await interaction.response.send_message("❌ You are not eligible to perform this action.", ephemeral=True)
-
+        error_msg = "❌ You are not eligible to perform this action."
     elif isinstance(error, NotFoundError):
-        await interaction.response.send_message("❌ The requested resource was not found.", ephemeral=True)
-
+        error_msg = "❌ The requested resource was not found."
     elif isinstance(error, AlreadyExistsError):
-        await interaction.response.send_message("❌ The resource you are trying to create already exists.", ephemeral=True)
-
+        error_msg = "❌ The resource you are trying to create already exists."
     elif isinstance(error, InvalidInputError):
-        await interaction.response.send_message("❌ The provided input is invalid.", ephemeral=True)
-
+        error_msg = "❌ The provided input is invalid."
     elif isinstance(error, GuildNotSetupError):
-        await interaction.response.send_message("❌ This server is not properly set up. Please contact an administrator.", ephemeral=True)
-
+        error_msg = "❌ This server is not properly set up. Please contact an administrator."
     elif isinstance(error, VotingNotFoundError):
-        await interaction.response.send_message("❌ Voting not found.", ephemeral=True)
-
+        error_msg = "❌ Voting not found."
     elif isinstance(error, AlreadyVotedError):
-        await interaction.response.send_message("❌ You have already voted.", ephemeral=True)
-
+        error_msg = "❌ You have already voted."
     elif isinstance(error, ElectionInProgressError):
-        await interaction.response.send_message("❌ An election is already in progress.", ephemeral=True)
-
+        error_msg = "❌ An election is already in progress."
     # Handle built-in app command errors
     elif isinstance(error, app_commands.MissingPermissions):
         perms = ", ".join(error.missing_permissions)
-        await interaction.response.send_message(f"❌ You are missing required permissions: {perms}", ephemeral=True)
-
+        error_msg = f"❌ You are missing required permissions: {perms}"
     elif isinstance(error, app_commands.BotMissingPermissions):
         perms = ", ".join(error.missing_permissions)
-        await interaction.response.send_message(f"❌ I am missing required permissions: {perms}", ephemeral=True)
-
+        error_msg = f"❌ I am missing required permissions: {perms}"
     elif isinstance(error, app_commands.CommandOnCooldown):
-        await interaction.response.send_message(f"❌ This command is on cooldown. Try again in {error.retry_after:.1f} seconds.", ephemeral=True)
-
+        error_msg = f"❌ This command is on cooldown. Try again in {error.retry_after:.1f} seconds."
     # Handle any other errors
     else:
         error_msg = f"❌ An error occurred: {str(error)}"
-
-        # Check if we already responded
-        if interaction.response.is_done():
-            await interaction.followup.send(error_msg, ephemeral=True)
-        else:
-            await interaction.response.send_message(error_msg, ephemeral=True)
-
-        # Log the full traceback
         print(f"Error in slash command {interaction.command.name if interaction.command else 'unknown'}:")
         traceback.print_exception(type(error), error, error.__traceback__)
+
+    await _safe_interaction_send(interaction, error_msg, ephemeral=True)
 
 
 # Alias handle_app_command_error as handle_interaction_error

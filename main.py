@@ -7,13 +7,13 @@ from discord.ext import tasks, commands
 import asyncio
 import platform
 from colorama import Fore
-from datetime import datetime, timezone
+from datetime import datetime
 
 import config
 from utils.database import DatabaseHelper, row_to_doc, wrap_list_rows
 from utils.helpers import datetime_now, seconds_until
 from utils.enums import VotingStatus, VotingType, VOTING_TYPE_CONFIG
-from utils.formatting import format_voting_result, format_timestamp, create_embed
+from utils.formatting import format_voting_result, create_embed
 from utils.errors import handle_command_error
 from appwrite.client import Client as AppwriteClient
 from appwrite.services.tables_db import TablesDB
@@ -88,21 +88,23 @@ async def update_votings():
                 start_dt = datetime.fromisoformat(vs.replace("Z", "+00:00"))
             except ValueError:
                 continue
-            if start_dt <= current_datetime:
+            if start_dt <= current_datetime or config.DEBUG_MODE:
                 await db_helper.update_voting(
                     doc["$id"],
                     {"status": VotingStatus.VOTING.value},
                 )
                 log(f"Activated voting {doc['$id']} (pending → voting)", "INFO")
 
-        # Get all votings that have ended (status must be voting)
+        # Get all votings that should be finalized.
+        # In debug mode, treat every active voting as ended.
+        ended_queries = [Query.equal("status", VotingStatus.VOTING.value)]
+        if not config.DEBUG_MODE:
+            ended_queries.append(Query.less_than_equal("voting_end", current_datetime.isoformat()))
+
         ended = tables_db.list_rows(
             database_id=config.APPWRITE_DB_NAME,
             table_id="votings",
-            queries=[
-                Query.equal("status", VotingStatus.VOTING.value),
-                Query.less_than_equal("voting_end", current_datetime.isoformat()),
-            ],
+            queries=ended_queries,
         )
         all_votings = wrap_list_rows(ended)
         votings = all_votings["documents"]
@@ -203,56 +205,123 @@ async def process_proposal_result(voting: dict, guild: discord.Guild, guild_data
 async def process_election_result(voting: dict, guild: discord.Guild, guild_data: dict):
     """Process the result of an election"""
     try:
-        # Get all candidates and their vote counts
-        candidates = await db_helper.get_candidates(voting['$id'])
-
+        candidates = await db_helper.get_candidates(voting["$id"])
         if not candidates:
             log(f"No candidates found for election {voting['$id']}", "WARNING")
+            await db_helper.update_council(guild.id, {"election_in_progress": False})
+            await db_helper.update_voting(
+                voting["$id"],
+                {"status": VotingStatus.FAILED.value, "result_announced": True},
+            )
             return
 
-        # Sort by vote count
-        candidates.sort(key=lambda x: x.get('vote_count', 0), reverse=True)
-
+        candidates.sort(key=lambda x: x.get("vote_count", 0), reverse=True)
         voting_type = VotingType(voting["type"])
 
-        # Create result embed
+        elected: list[dict] = []
+        role_synced = False
+
+        if voting_type == VotingType.ELECTION:
+            max_councillors = guild_data.get("max_councillors", 9)
+            councillor_role = None
+            if guild_data.get("councillor_role_id"):
+                councillor_role = guild.get_role(int(guild_data["councillor_role_id"]))
+                role_synced = councillor_role is not None
+
+            chancellor_role = None
+            if guild_data.get("chancellor_role_id"):
+                chancellor_role = guild.get_role(int(guild_data["chancellor_role_id"]))
+
+            current_councillors = await db_helper.list_councillors(guild.id, active_only=True)
+            for councillor in current_councillors:
+                await db_helper.update_councillor(councillor["$id"], {"active": False, "is_chancellor": False})
+                member = guild.get_member(int(councillor["discord_id"]))
+                if member and councillor_role and councillor_role in member.roles:
+                    try:
+                        await member.remove_roles(councillor_role, reason="Council term ended")
+                    except discord.HTTPException:
+                        pass
+                if member and chancellor_role and chancellor_role in member.roles:
+                    try:
+                        await member.remove_roles(chancellor_role, reason="Council term ended")
+                    except discord.HTTPException:
+                        pass
+
+            for candidate in candidates[:max_councillors]:
+                if int(candidate.get("vote_count", 0)) <= 0:
+                    continue
+
+                existing = await db_helper.get_councillor(candidate["discord_id"], guild.id)
+                if existing:
+                    await db_helper.update_councillor(
+                        existing["$id"],
+                        {"active": True, "is_chancellor": False, "name": candidate["name"]},
+                    )
+                else:
+                    await db_helper.create_councillor(
+                        discord_id=candidate["discord_id"],
+                        name=candidate["name"],
+                        guild_id=guild.id,
+                    )
+
+                await db_helper.update_candidate(candidate["$id"], {"elected": True})
+                elected.append(candidate)
+
+                member = guild.get_member(int(candidate["discord_id"]))
+                if member and councillor_role and councillor_role not in member.roles:
+                    try:
+                        await member.add_roles(councillor_role, reason="Elected to council")
+                    except discord.HTTPException:
+                        pass
+
+            await db_helper.update_council(
+                guild.id,
+                {"election_in_progress": False, "current_chancellor_id": None},
+            )
+
+        else:
+            # For other election types, keep existing ranking behavior.
+            elected = candidates[:1]
+
         embed = create_embed(
             title="🗳️ Election Results",
             description=f"**{voting['title']}**",
-            color=0x00B0F4
+            color=0x00B0F4,
         )
 
-        # Add top candidates
-        max_display = 10
+        max_display = min(10, len(candidates))
         for i, candidate in enumerate(candidates[:max_display], 1):
-            vote_count = candidate.get('vote_count', 0)
+            vote_count = candidate.get("vote_count", 0)
+            suffix = " ✅" if candidate in elected else ""
             embed.add_field(
-                name=f"{i}. {candidate['name']}",
+                name=f"{i}. {candidate['name']}{suffix}",
                 value=f"Votes: {vote_count}",
-                inline=False
+                inline=False,
             )
 
-        # Send result
-        if guild_data.get('announcement_channel_id'):
-            channel = guild.get_channel(int(guild_data['announcement_channel_id']))
-        elif guild_data.get('voting_channel_id'):
-            channel = guild.get_channel(int(guild_data['voting_channel_id']))
+        embed.set_footer(
+            text=(
+                f"Elected: {len(elected)}"
+                + (" • Roles synced" if role_synced else "")
+            )
+        )
+
+        if guild_data.get("announcement_channel_id"):
+            channel = guild.get_channel(int(guild_data["announcement_channel_id"]))
+        elif guild_data.get("voting_channel_id"):
+            channel = guild.get_channel(int(guild_data["voting_channel_id"]))
         else:
             channel = None
 
         if channel:
             await channel.send(embed=embed)
 
-        # Update voting status
         await db_helper.update_voting(
-            voting['$id'],
-            {
-                'status': VotingStatus.PASSED.value,
-                'result_announced': True
-            }
+            voting["$id"],
+            {"status": VotingStatus.PASSED.value, "result_announced": True},
         )
 
-        log(f"Processed election {voting['$id']}", "SUCCESS")
+        log(f"Processed election {voting['$id']} (elected: {len(elected)})", "SUCCESS")
 
     except Exception as e:
         log(f"Error processing election result: {e}", "ERROR")

@@ -2,7 +2,7 @@
 discord.py==2.6.4
 
 # Appwrite SDK — TablesDB requires 17+
-appwrite>=17,<18
+appwrite>=17
 
 # Colorama for colored console output
 colorama==0.4.6

@@ -514,6 +514,28 @@ class DatabaseHelper:
         )
         return wrap_list_rows(result)["documents"]
 
+    async def get_candidate(self, candidate_id: str) -> Optional[Dict[str, Any]]:
+        """Get a candidate by row ID"""
+        try:
+            row = self.tables.get_row(
+                database_id=self.db_id,
+                table_id="election_candidates",
+                row_id=candidate_id,
+            )
+            return row_to_doc(row)
+        except AppwriteException:
+            return None
+
+    async def update_candidate(self, candidate_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update candidate data"""
+        row = self.tables.update_row(
+            database_id=self.db_id,
+            table_id="election_candidates",
+            row_id=candidate_id,
+            data=data,
+        )
+        return row_to_doc(row)
+
     async def get_registered_voters(self, voting_id: str) -> List[Dict[str, Any]]:
         """Get all registered voters for an election"""
         result = self.tables.list_rows(
@@ -522,6 +544,16 @@ class DatabaseHelper:
             queries=[Query.equal("voting_id", voting_id)],
         )
         return wrap_list_rows(result)["documents"]
+
+    async def update_voter(self, voter_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update registered voter data"""
+        row = self.tables.update_row(
+            database_id=self.db_id,
+            table_id="registered_voters",
+            row_id=voter_id,
+            data=data,
+        )
+        return row_to_doc(row)
 
     # ============================================
     # Logging Operations

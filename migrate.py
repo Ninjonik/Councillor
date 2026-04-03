@@ -222,6 +222,27 @@ TABLE_SPECS: list[dict] = [
             {"key": "idx_logs_ts",    "type": "key", "attributes": ["timestamp"]},
         ],
     },
+    {
+        "id": "decrees",
+        "name": "Decrees",
+        "columns": [
+            {"key": "guild_id",       "type": "varchar",  "size": 36,  "required": True},
+            {"key": "title",          "type": "varchar",  "size": 512, "required": True},
+            {"key": "description",    "type": "mediumtext",              "required": False},
+            {"key": "issued_by",      "type": "varchar",  "size": 36,  "required": True},
+            {"key": "issued_by_name", "type": "varchar",  "size": 256, "required": True},
+            {"key": "issued_at",      "type": "datetime",               "required": True},
+            {"key": "expires_at",     "type": "datetime",               "required": False},
+            {"key": "active",         "type": "boolean",                "required": True, "default": True},
+            {"key": "revoked_at",     "type": "datetime",               "required": False},
+            {"key": "revoke_reason",  "type": "varchar",  "size": 512, "required": False},
+        ],
+        "indexes": [
+            {"key": "idx_decrees_guild", "type": "key", "attributes": ["guild_id"]},
+            {"key": "idx_decrees_active", "type": "key", "attributes": ["active"]},
+            {"key": "idx_decrees_exp", "type": "key", "attributes": ["expires_at"]},
+        ],
+    },
 ]
 
 
@@ -276,25 +297,12 @@ def create_or_get_database_raw(client: Client) -> str | None:
         return None
 
 
-def purge_tables_raw(client: Client, database_id: str) -> None:
-    try:
-        data = client.call("get", f"/tablesdb/{database_id}/tables", {}, {})
-    except AppwriteException as e:
-        log.warning(f"Could not list tables (maybe empty): {e!s}")
-        return
-    for t in data.get("tables") or []:
-        tid = t.get("$id")
-        if not tid:
-            continue
-        try:
-            client.call("delete", f"/tablesdb/{database_id}/tables/{tid}",
-                        {"content-type": "application/json"}, {})
-            log.success(f"Deleted table: {tid}")
-        except AppwriteException as e:
-            if "not found" in str(e).lower() or "404" in str(e):
-                log.info(f"Table not found (skip): {tid}")
-            else:
-                log.warning(f"Error deleting table {tid}: {e!s}")
+def _extract_key(item: dict, *candidates: str) -> str | None:
+    for candidate in candidates:
+        value = item.get(candidate)
+        if value:
+            return str(value)
+    return None
 
 
 def _table_exists_raw(client: Client, database_id: str, table_id: str) -> bool:
@@ -303,6 +311,71 @@ def _table_exists_raw(client: Client, database_id: str, table_id: str) -> bool:
         return True
     except AppwriteException:
         return False
+
+
+def _list_columns_raw(client: Client, database_id: str, table_id: str) -> dict[str, dict]:
+    try:
+        data = client.call("get", f"/tablesdb/{database_id}/tables/{table_id}/columns", {}, {})
+    except AppwriteException:
+        return {}
+
+    out: dict[str, dict] = {}
+    for col in data.get("columns") or []:
+        key = _extract_key(col, "key", "$id", "id")
+        if key:
+            out[key] = col
+    return out
+
+
+def _list_indexes_raw(client: Client, database_id: str, table_id: str) -> dict[str, dict]:
+    try:
+        data = client.call("get", f"/tablesdb/{database_id}/tables/{table_id}/indexes", {}, {})
+    except AppwriteException:
+        return {}
+
+    out: dict[str, dict] = {}
+    for idx in data.get("indexes") or []:
+        key = _extract_key(idx, "key", "$id", "id")
+        if key:
+            out[key] = idx
+    return out
+
+
+def _create_table_raw(client: Client, database_id: str, table_id: str, name: str) -> bool:
+    try:
+        client.call(
+            "post",
+            f"/tablesdb/{database_id}/tables",
+            {"content-type": "application/json"},
+            {"tableId": table_id, "name": name},
+        )
+        log.success(f"Created table: {name}")
+        return True
+    except AppwriteException as e:
+        log.error(f"Failed to create table {name}: {e!s}")
+        return False
+
+
+def _create_index_raw(client: Client, database_id: str, table_id: str, idx: dict) -> None:
+    client.call(
+        "post",
+        f"/tablesdb/{database_id}/tables/{table_id}/indexes",
+        {"content-type": "application/json"},
+        {
+            "key": idx["key"],
+            "type": idx["type"],
+            "columns": idx["attributes"],
+        },
+    )
+
+
+def _delete_column_raw(client: Client, database_id: str, table_id: str, column_key: str) -> None:
+    client.call(
+        "delete",
+        f"/tablesdb/{database_id}/tables/{table_id}/columns/{column_key}",
+        {"content-type": "application/json"},
+        {},
+    )
 
 
 def _create_column(client: Client, database_id: str, table_id: str, col: dict) -> None:
@@ -364,65 +437,107 @@ def _create_column(client: Client, database_id: str, table_id: str, col: dict) -
     else:
         raise ValueError(f"Unknown column type: {ctype!r} for key {key!r}")
 
-def create_tables_raw(client: Client, database_id: str) -> None:
+
+def _warn_column_drift(table_name: str, key: str, desired: dict, live: dict) -> None:
+    desired_required = bool(desired.get("required", False))
+    desired_array = bool(desired.get("array", False))
+    live_required = bool(live.get("required", False))
+    live_array = bool(live.get("array", False))
+
+    live_type = str(live.get("type") or "").lower()
+    desired_type = str(desired.get("type") or "").lower()
+
+    drift_fields: list[str] = []
+    if live_type and live_type != desired_type:
+        drift_fields.append(f"type live={live_type} desired={desired_type}")
+    if live_required != desired_required:
+        drift_fields.append(f"required live={live_required} desired={desired_required}")
+    if live_array != desired_array:
+        drift_fields.append(f"array live={live_array} desired={desired_array}")
+
+    if desired_type == "varchar":
+        live_size = live.get("size")
+        desired_size = desired.get("size")
+        if live_size is not None and desired_size is not None and int(live_size) != int(desired_size):
+            drift_fields.append(f"size live={live_size} desired={desired_size}")
+
+    if drift_fields:
+        log.warning(f"Schema drift on {table_name}.{key}: " + ", ".join(drift_fields))
+
+
+def sync_schema_raw(client: Client, database_id: str) -> None:
     for spec in TABLE_SPECS:
         table_id = spec["id"]
+        table_name = spec["name"]
 
-        if _table_exists_raw(client, database_id, table_id):
-            log.warning(f"Table already exists: {spec['name']}")
-            continue
+        if not _table_exists_raw(client, database_id, table_id):
+            if not _create_table_raw(client, database_id, table_id, table_name):
+                continue
+            time.sleep(0.5)
 
-        # Step 1: create empty table (no inline columns — avoids type restrictions)
-        try:
-            client.call(
-                "post", f"/tablesdb/{database_id}/tables",
-                {"content-type": "application/json"},
-                {"tableId": table_id, "name": spec["name"]},
-            )
-            log.success(f"Created table: {spec['name']}")
-        except AppwriteException as e:
-            log.error(f"Failed to create table {spec['name']}: {e!s}")
-            continue
+        live_columns = _list_columns_raw(client, database_id, table_id)
+        desired_columns = {col["key"]: col for col in spec.get("columns") or []}
 
-        # Brief pause — Appwrite sometimes needs a moment before accepting column writes
-        time.sleep(0.5)
-
-        # Step 2: add columns one by one via typed endpoints
-        for col in spec["columns"]:
+        # Create missing columns.
+        for col_key, col_spec in desired_columns.items():
+            if col_key in live_columns:
+                _warn_column_drift(table_name, col_key, col_spec, live_columns[col_key])
+                continue
             try:
-                _create_column(client, database_id, table_id, col)
-                log.success(f"  + column {col['key']} ({col['type']})")
+                _create_column(client, database_id, table_id, col_spec)
+                log.success(f"  + column {col_key} ({col_spec['type']})")
             except AppwriteException as e:
-                log.error(f"  ✗ column {col['key']} on {spec['name']}: {e!s}")
+                log.error(f"  ✗ column {col_key} on {table_name}: {e!s}")
 
-        # Step 3: add indexes
-        for idx in spec.get("indexes") or []:
-            try:
-                client.call(
-                    "post", f"/tablesdb/{database_id}/tables/{table_id}/indexes",
-                    {"content-type": "application/json"},
-                    {
-                        "key": idx["key"],
-                        "type": idx["type"],
-                        "columns": idx["attributes"],  # <-- was "attributes"
-                    },
+        # Prompt before dropping extra columns that are not in TABLE_SPECS.
+        extra_columns = sorted(set(live_columns.keys()) - set(desired_columns.keys()))
+        if extra_columns:
+            log.warning(f"Extra columns in {table_name}: {', '.join(extra_columns)}")
+            answer = input(
+                f"Drop extra columns from {table_name}? This can destroy data. Type 'DROP' to confirm: "
+            ).strip()
+            if answer == "DROP":
+                for extra_key in extra_columns:
+                    try:
+                        _delete_column_raw(client, database_id, table_id, extra_key)
+                        log.success(f"  - dropped column {extra_key}")
+                    except AppwriteException as e:
+                        log.error(f"  ✗ failed dropping column {extra_key} on {table_name}: {e!s}")
+            else:
+                log.info(f"Skipped dropping extra columns on {table_name}")
+
+        # Create missing indexes and warn on index drift.
+        live_indexes = _list_indexes_raw(client, database_id, table_id)
+        desired_indexes = {idx["key"]: idx for idx in spec.get("indexes") or []}
+
+        for idx_key, idx_spec in desired_indexes.items():
+            live_idx = live_indexes.get(idx_key)
+            if not live_idx:
+                try:
+                    _create_index_raw(client, database_id, table_id, idx_spec)
+                    log.success(f"  + index {idx_key}")
+                except AppwriteException as e:
+                    log.error(f"  ✗ index {idx_key} on {table_name}: {e!s}")
+                continue
+
+            live_type = str(live_idx.get("type") or "")
+            desired_type = str(idx_spec.get("type") or "")
+            live_cols = list(live_idx.get("attributes") or live_idx.get("columns") or [])
+            desired_cols = list(idx_spec.get("attributes") or [])
+            if live_type != desired_type or live_cols != desired_cols:
+                log.warning(
+                    f"Index drift on {table_name}.{idx_key}: "
+                    f"live type={live_type} cols={live_cols}, desired type={desired_type} cols={desired_cols}"
                 )
-                log.success(f"  + index {idx['key']}")
-            except AppwriteException as e:
-                log.error(f"  ✗ index {idx['key']} on {spec['name']}: {e!s}")
 
 
 if __name__ == "__main__":
     log.info("=" * 60)
-    log.info("COUNCILLOR BOT — TablesDB migration")
+    log.info("COUNCILLOR BOT — TablesDB schema sync")
     log.info("=" * 60)
-    log.warning("⚠️  WARNING: This will DELETE ALL TABLES in this database if you confirm!")
+    log.info("This migration is additive and non-destructive by default.")
+    log.info("It creates missing tables/columns/indexes and only asks before dropping extra columns.")
     log.info("=" * 60)
-
-    confirmation = input("\nType 'YES' to confirm purge + recreate tables: ")
-    if confirmation.strip() != "YES":
-        log.info("Migration cancelled.")
-        sys.exit(0)
 
     client = Client()
     client.set_endpoint(config.APPWRITE_ENDPOINT)
@@ -435,12 +550,10 @@ if __name__ == "__main__":
         log.error("Aborting.")
         sys.exit(1)
 
-    log.info("\nStep 2: Purge existing tables...")
-    purge_tables_raw(client, database_id)
-
-    log.info("\nStep 3: Create tables + columns + indexes...")
-    create_tables_raw(client, database_id)
+    log.info("\nStep 2: Sync tables + columns + indexes...")
+    sync_schema_raw(client, database_id)
 
     log.success("\n" + "=" * 60)
-    log.success("Migration finished.")
+    log.success("Schema sync finished.")
     log.success("=" * 60)
+

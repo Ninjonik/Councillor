@@ -19,3 +19,9 @@ DEBUG_MODE = False
 # ROLE_REQUIREMENT_ID = None
 # DAYS_REQUIREMENT = 180
 # VOTING_CHANNEL_ID = None
+
+# Optional web server settings for public markdown pages
+WEB_HOST = '0.0.0.0'
+WEB_PORT = 7029
+# Public URL users should click for details links; defaults to http://localhost:{WEB_PORT}
+# WEB_PUBLIC_BASE_URL = 'https://your-domain.example.com'

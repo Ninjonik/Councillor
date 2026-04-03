@@ -12,7 +12,16 @@ from appwrite.exception import AppwriteException
 from appwrite.id import ID
 
 import config
-from utils.enums import VotingType, VotingStatus, LogType, LogSeverity
+from utils.enums import VotingType, VotingStatus, LogType, LogSeverity, SettingType, EditableBy
+
+
+LAW_VOTING_TYPES = [
+    VotingType.LEGISLATION.value,
+    VotingType.AMENDMENT.value,
+    VotingType.IMPEACHMENT.value,
+    VotingType.CONFIDENCE_VOTE.value,
+    VotingType.OTHER.value,
+]
 
 
 def row_to_doc(row: Any) -> Dict[str, Any]:
@@ -392,6 +401,29 @@ class DatabaseHelper:
         )
         return wrap_list_rows(result)["documents"]
 
+    async def list_laws(
+        self,
+        guild_id: int | str,
+        statuses: Optional[List[VotingStatus]] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """List law votings (non-election, non-decree) for a guild."""
+        council_id = f"{guild_id}_c"
+        queries: List[str] = [
+            Query.equal("council_id", council_id),
+            Query.equal("type", LAW_VOTING_TYPES),
+            Query.limit(limit),
+        ]
+        if statuses:
+            queries.append(Query.equal("status", [s.value for s in statuses]))
+
+        result = self.tables.list_rows(
+            database_id=self.db_id,
+            table_id="votings",
+            queries=queries,
+        )
+        return wrap_list_rows(result)["documents"]
+
     # ============================================
     # Vote Operations
     # ============================================
@@ -592,3 +624,156 @@ class DatabaseHelper:
             return row_to_doc(row)
         except AppwriteException:
             return None
+
+    async def expire_decrees(self, guild_id: Optional[int | str] = None) -> int:
+        """Mark expired decrees inactive and return number changed."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        queries: List[str] = [
+            Query.equal("active", True),
+            Query.less_than_equal("expires_at", now_iso),
+        ]
+        if guild_id is not None:
+            queries.append(Query.equal("guild_id", str(guild_id)))
+
+        result = self.tables.list_rows(
+            database_id=self.db_id,
+            table_id="decrees",
+            queries=queries,
+        )
+        decrees = wrap_list_rows(result)["documents"]
+        for decree in decrees:
+            await self.update_decree(
+                decree["$id"],
+                {
+                    "active": False,
+                    "revoked_at": now_iso,
+                    "revoke_reason": "Expired",
+                },
+            )
+        return len(decrees)
+
+    async def get_setting(self, key: str, guild_id: int | str) -> Optional[Dict[str, Any]]:
+        """Get a guild setting by key."""
+        result = self.tables.list_rows(
+            database_id=self.db_id,
+            table_id="settings",
+            queries=[
+                Query.equal("key", key),
+                Query.equal("guild_id", str(guild_id)),
+                Query.limit(1),
+            ],
+        )
+        wrapped = wrap_list_rows(result)
+        if wrapped["total"] == 0:
+            return None
+        return wrapped["documents"][0]
+
+    async def set_setting(
+        self,
+        key: str,
+        value: str,
+        guild_id: int | str,
+        setting_type: SettingType = SettingType.STRING,
+        description: str = "",
+        editable_by: EditableBy = EditableBy.ADMIN,
+    ) -> Dict[str, Any]:
+        """Create or update a guild setting."""
+        existing = await self.get_setting(key, guild_id)
+        data = {
+            "key": key,
+            "value": value,
+            "type": setting_type.value,
+            "description": description,
+            "guild_id": str(guild_id),
+            "editable_by": editable_by.value,
+        }
+
+        if existing:
+            row = self.tables.update_row(
+                database_id=self.db_id,
+                table_id="settings",
+                row_id=existing["$id"],
+                data=data,
+            )
+            return row_to_doc(row)
+
+        row = self.tables.create_row(
+            database_id=self.db_id,
+            table_id="settings",
+            row_id=ID.unique(),
+            data=data,
+        )
+        return row_to_doc(row)
+
+    async def create_decree(
+        self,
+        guild_id: int | str,
+        title: str,
+        description: str,
+        issued_by: int | str,
+        issued_by_name: str,
+        expires_at: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """Create a decree record."""
+        data: Dict[str, Any] = {
+            "guild_id": str(guild_id),
+            "title": title,
+            "description": description,
+            "issued_by": str(issued_by),
+            "issued_by_name": issued_by_name,
+            "issued_at": datetime.now(timezone.utc).isoformat(),
+            "active": True,
+        }
+        if expires_at:
+            data["expires_at"] = expires_at.isoformat()
+
+        row = self.tables.create_row(
+            database_id=self.db_id,
+            table_id="decrees",
+            row_id=ID.unique(),
+            data=data,
+        )
+        return row_to_doc(row)
+
+    async def get_decree(self, decree_id: str) -> Optional[Dict[str, Any]]:
+        """Get decree by ID."""
+        try:
+            row = self.tables.get_row(
+                database_id=self.db_id,
+                table_id="decrees",
+                row_id=decree_id,
+            )
+            return row_to_doc(row)
+        except AppwriteException:
+            return None
+
+    async def update_decree(self, decree_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update decree data."""
+        row = self.tables.update_row(
+            database_id=self.db_id,
+            table_id="decrees",
+            row_id=decree_id,
+            data=data,
+        )
+        return row_to_doc(row)
+
+    async def list_decrees(
+        self,
+        guild_id: int | str,
+        active_only: Optional[bool] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """List decrees for a guild with optional active filter."""
+        queries: List[str] = [
+            Query.equal("guild_id", str(guild_id)),
+            Query.limit(limit),
+        ]
+        if active_only is not None:
+            queries.append(Query.equal("active", active_only))
+
+        result = self.tables.list_rows(
+            database_id=self.db_id,
+            table_id="decrees",
+            queries=queries,
+        )
+        return wrap_list_rows(result)["documents"]

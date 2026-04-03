@@ -224,6 +224,8 @@ class Information(commands.Cog):
                 "`/council` - Learn about the Grand Council and eligibility",
                 "`/info` - View current council members and information",
                 "`/voting_info` - See active votings and proposals",
+                "`/laws` - List passed/failed laws with vote counts",
+                "`/decrees` - List decrees in effect or historical",
                 "`/help` - Display this help message"
             ]
 
@@ -253,7 +255,8 @@ class Information(commands.Cog):
                     "`/list_ministries` - View all ministries",
                     "`/announce` - Make an official announcement",
                     "`/appoint_role` - Associate a role with a ministry",
-                    "`/remove_ministry` - Remove a ministry"
+                    "`/remove_ministry` - Remove a ministry",
+                    "`/issue_decree` - Issue a decree (executive authority)"
                 ]
 
                 embed.add_field(
@@ -271,7 +274,8 @@ class Information(commands.Cog):
                     "`/set_channel` - Configure channels",
                     "`/set_requirement` - Set participation requirements",
                     "`/toggle_bot` - Enable/disable the bot",
-                    "`/announce_election` - Announce council elections"
+                    "`/announce_election` - Announce and manage elections",
+                    "`/set_constitution` - Store constitution markdown for web pages"
                 ]
 
                 embed.add_field(

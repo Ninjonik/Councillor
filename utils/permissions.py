@@ -2,7 +2,6 @@
 Permission checking utilities
 Determines if users have the required roles and permissions
 """
-from typing import Optional
 import discord
 
 import config
@@ -129,6 +128,20 @@ async def check_president(
 
     if not (is_pres or is_vice) and not await is_admin(user):
         raise NotEligibleError("You must be a President or Vice President to perform this action.")
+
+
+async def check_executive(
+    user: discord.Member,
+    guild: discord.Guild,
+    db_helper: DatabaseHelper
+) -> None:
+    """Check if user is president, vice president, or chancellor."""
+    is_pres = await is_eligible(user, guild, RoleType.PRESIDENT, db_helper)
+    is_vice = await is_eligible(user, guild, RoleType.VICE_PRESIDENT, db_helper)
+    is_chancellor = await is_eligible(user, guild, RoleType.CHANCELLOR, db_helper)
+
+    if not (is_pres or is_vice or is_chancellor) and not await is_admin(user):
+        raise NotEligibleError("You must be President, Vice President, or Chancellor to perform this action.")
 
 
 async def check_admin(user: discord.User | discord.Member) -> None:

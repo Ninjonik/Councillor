@@ -327,6 +327,17 @@ async def process_election_result(voting: dict, guild: discord.Guild, guild_data
         log(f"Error processing election result: {e}", "ERROR")
 
 
+@tasks.loop(minutes=30)
+async def expire_decrees_loop():
+    """Deactivate decrees that have passed their expiry timestamp."""
+    try:
+        expired = await db_helper.expire_decrees()
+        if expired > 0:
+            log(f"Expired {expired} decree(s)", "INFO")
+    except Exception as e:
+        log(f"Error in decree expiry task: {e}", "ERROR")
+
+
 @tasks.loop(seconds=30)
 async def status_loop():
     """Update bot status periodically"""
@@ -384,7 +395,9 @@ class CouncillorBot(commands.Bot):
             "cogs.propose",
             "cogs.elections",
             "cogs.admin",
-            "cogs.chancellor"
+            "cogs.chancellor",
+            "cogs.laws",
+            "cogs.webserver",
         ]
 
     async def setup_hook(self):
@@ -420,6 +433,10 @@ class CouncillorBot(commands.Bot):
         if not update_votings.is_running():
             update_votings.start()
             log("Started voting update task", "SUCCESS")
+
+        if not expire_decrees_loop.is_running():
+            expire_decrees_loop.start()
+            log("Started decree expiry task", "SUCCESS")
 
     async def on_guild_join(self, guild: discord.Guild):
         """Called when bot joins a guild"""

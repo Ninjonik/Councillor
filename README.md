@@ -8,6 +8,9 @@ A comprehensive Discord bot for managing democratic processes in Discord communi
 - **Council Elections** - Democratic elections for council members
 - **Chancellor Elections** - Councillors elect a Chancellor from among themselves
 - **Voting & Proposals** - Create and vote on legislation, amendments, and more
+- **Law Registry** - Table-style passed/failed law lists with vote counts
+- **Executive Decrees** - Issue decrees with optional expiry and active/history views
+- **Public Markdown Pages** - Per-guild law/decree/constitution pages via built-in HTTP server
 - **Ministry Management** - Chancellor can create and manage government ministries
 - **Role-based Permissions** - Granular permission system for different roles
 
@@ -70,6 +73,11 @@ ADMIN_USER_ID = 'your-discord-user-id'
 
 # Debug Mode
 DEBUG_MODE = False
+
+# Optional web server settings
+WEB_HOST = '0.0.0.0'
+WEB_PORT = 7029
+# WEB_PUBLIC_BASE_URL = 'https://your-domain.example.com'
 ```
 
 ### 5. Run the Bot
@@ -94,6 +102,8 @@ python main.py
 - `/council` - Learn about the Grand Council and check eligibility
 - `/info` - View current council members and information
 - `/voting_info` - See active votings and proposals
+- `/laws` - List passed/failed laws in table format with vote counts
+- `/decrees` - List current or historical decrees (title + detail links)
 - `/help` - Display help information
 
 #### ⚖️ Councillor Commands
@@ -110,8 +120,9 @@ python main.py
 - `/assign_minister` - Assign a minister to a ministry
 - `/list_ministries` - View all ministries
 - `/announce` - Make an official announcement
-- `/appoint_role` - Associate a Discord role with a ministry
+- `/appoint_role` - Associate a role with a ministry
 - `/remove_ministry` - Remove/deactivate a ministry
+- `/issue_decree` - Issue an executive decree (also available to President/Vice President)
 
 #### 🔧 Admin Commands
 - `/setup` - Initial bot setup for the server
@@ -121,6 +132,21 @@ python main.py
 - `/set_requirement` - Set participation requirements (days, max councillors)
 - `/toggle_bot` - Enable or disable the bot
 - `/announce_election` - Announce and manage elections
+- `/set_constitution` - Save constitution markdown for public web pages
+
+### Public Markdown Pages
+
+The bot also runs a simple markdown HTTP server in the same process.
+
+- `/` - list available guild pages
+- `/g/{guild_id}` - guild navigation page
+- `/g/{guild_id}/constitution.md` - constitution markdown
+- `/g/{guild_id}/laws/passed.md` - passed laws list
+- `/g/{guild_id}/laws/failed.md` - failed laws list
+- `/g/{guild_id}/laws/{law_id}.md` - individual law details
+- `/g/{guild_id}/decrees/active.md` - active decrees list
+- `/g/{guild_id}/decrees/history.md` - decree history
+- `/g/{guild_id}/decrees/{decree_id}.md` - decree details
 
 ## 🏗️ Project Structure
 
@@ -146,7 +172,9 @@ Councillor/
     ├── council.py        # Council information
     ├── elections.py      # Election management
     ├── info.py           # Information display
-    └── propose.py        # Proposal creation and voting
+    ├── laws.py           # Laws/decrees/constitution commands
+    ├── propose.py        # Proposal creation and voting
+    └── webserver.py      # Markdown HTTP server routes
 ```
 
 ## 🎯 Key Concepts

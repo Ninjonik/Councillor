@@ -248,6 +248,30 @@ Activity and error logs.
 
 ---
 
+### 11. **decrees**
+Executive decrees issued by President, Vice President, or Chancellor.
+
+**Collection ID**: `decrees`
+
+**Attributes**:
+- `guild_id` (string, 36, required)
+- `title` (string, 512, required)
+- `description` (string, 4096)
+- `issued_by` (string, 36, required) - Discord user ID
+- `issued_by_name` (string, 256, required)
+- `issued_at` (datetime, required)
+- `expires_at` (datetime) - optional end-of-effect timestamp
+- `active` (boolean, required, default: true)
+- `revoked_at` (datetime)
+- `revoke_reason` (string, 512)
+
+**Indexes**:
+- `guild_id` (key)
+- `active` (key)
+- `expires_at` (key)
+
+---
+
 ## Setup Instructions
 
 ### Step 1: Create Database

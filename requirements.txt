@@ -6,3 +6,9 @@ appwrite>=17
 
 # Colorama for colored console output
 colorama==0.4.6
+
+# HTTP server for public markdown pages
+aiohttp>=3.9
+
+# Markdown to HTML rendering for public pages
+markdown>=3.6

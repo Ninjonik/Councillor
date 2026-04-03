@@ -22,29 +22,45 @@ from utils.enums import VotingType, VotingStatus, LogType
 class ElectionRegistrationView(discord.ui.View):
     """View for election registration buttons"""
 
-    def __init__(self, bot: commands.Bot, db_helper: DatabaseHelper, voting_id: str):
+    def __init__(
+        self,
+        bot: commands.Bot,
+        db_helper: DatabaseHelper,
+        voting_id: str,
+        voting_type: VotingType = VotingType.ELECTION,
+    ):
         super().__init__(timeout=None)
         self.bot = bot
         self.db_helper = db_helper
         self.voting_id = voting_id
+        self.voting_type = voting_type
+
+    async def _require_active_councillor(self, interaction: discord.Interaction) -> bool:
+        councillor = await self.db_helper.get_councillor(interaction.user.id, interaction.guild.id)
+        if not councillor or not councillor.get("active", False):
+            await interaction.response.send_message(
+                create_error_message("Only active councillors can participate in chancellor elections."),
+                ephemeral=True,
+            )
+            return False
+        return True
 
     @discord.ui.button(label="Register to Vote", style=discord.ButtonStyle.green, emoji="🗳️")
     async def register_voter(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Register as a voter"""
         try:
-            # Check eligibility
-            can_vote, reason = await can_register_to_vote(
-                interaction.user, interaction.guild, self.db_helper
-            )
+            if self.voting_type == VotingType.CHANCELLOR_ELECTION:
+                if not await self._require_active_councillor(interaction):
+                    return
+            else:
+                can_vote, reason = await can_register_to_vote(interaction.user, interaction.guild, self.db_helper)
+                if not can_vote:
+                    await interaction.response.send_message(
+                        create_error_message(f"Not eligible: {reason}"),
+                        ephemeral=True
+                    )
+                    return
 
-            if not can_vote:
-                await interaction.response.send_message(
-                    create_error_message(f"Not eligible: {reason}"),
-                    ephemeral=True
-                )
-                return
-
-            # Check if already registered
             voters = await self.db_helper.get_registered_voters(self.voting_id)
             if any(voter["discord_id"] == str(interaction.user.id) for voter in voters):
                 await interaction.response.send_message(
@@ -53,7 +69,6 @@ class ElectionRegistrationView(discord.ui.View):
                 )
                 return
 
-            # Register voter
             await self.db_helper.register_voter(
                 voting_id=self.voting_id,
                 discord_id=interaction.user.id,
@@ -70,21 +85,23 @@ class ElectionRegistrationView(discord.ui.View):
     async def register_candidate(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Register as a candidate"""
         try:
-            # Check eligibility
-            can_run, reason = await can_run_for_councillor(
-                interaction.user, interaction.guild, self.db_helper
-            )
+            if self.voting_type == VotingType.CHANCELLOR_ELECTION:
+                if not await self._require_active_councillor(interaction):
+                    return
+            else:
+                can_run, reason = await can_run_for_councillor(interaction.user, interaction.guild, self.db_helper)
+                if not can_run:
+                    await interaction.response.send_message(
+                        create_error_message(f"Not eligible: {reason}"),
+                        ephemeral=True
+                    )
+                    return
 
-            if not can_run:
-                await interaction.response.send_message(
-                    create_error_message(f"Not eligible: {reason}"),
-                    ephemeral=True
-                )
-                return
-
-            # Check max candidates
             guild_data = await self.db_helper.get_guild(interaction.guild.id)
             max_candidates = guild_data.get("max_councillors", 9)
+            if self.voting_type == VotingType.CHANCELLOR_ELECTION:
+                # Chancellor election candidate pool is active councillors.
+                max_candidates = len(await self.db_helper.list_councillors(interaction.guild.id, active_only=True))
 
             candidates = await self.db_helper.get_candidates(self.voting_id)
             if len(candidates) >= max_candidates:
@@ -94,7 +111,6 @@ class ElectionRegistrationView(discord.ui.View):
                 )
                 return
 
-            # Check if already registered as candidate
             if any(candidate["discord_id"] == str(interaction.user.id) for candidate in candidates):
                 await interaction.response.send_message(
                     create_error_message("You are already registered as a candidate!"),
@@ -102,16 +118,15 @@ class ElectionRegistrationView(discord.ui.View):
                 )
                 return
 
-            # Register candidate
             await self.db_helper.register_candidate(
                 voting_id=self.voting_id,
                 discord_id=interaction.user.id,
                 name=interaction.user.name,
             )
-            await interaction.response.send_message(
-                create_success_message("You have been registered as a candidate! Good luck!"),
-                ephemeral=True,
-            )
+            success_text = "You have been registered as a candidate! Good luck!"
+            if self.voting_type == VotingType.CHANCELLOR_ELECTION:
+                success_text = "You have been registered as a Chancellor candidate!"
+            await interaction.response.send_message(create_success_message(success_text), ephemeral=True)
         except Exception as e:
             await handle_interaction_error(interaction, e)
 
@@ -119,11 +134,19 @@ class ElectionRegistrationView(discord.ui.View):
 class ElectionVotingView(discord.ui.View):
     """View for casting election votes"""
 
-    def __init__(self, bot: commands.Bot, db_helper: DatabaseHelper, voting_id: str, candidates: list[dict]):
+    def __init__(
+        self,
+        bot: commands.Bot,
+        db_helper: DatabaseHelper,
+        voting_id: str,
+        candidates: list[dict],
+        voting_type: VotingType = VotingType.ELECTION,
+    ):
         super().__init__(timeout=None)
         self.bot = bot
         self.db_helper = db_helper
         self.voting_id = voting_id
+        self.voting_type = voting_type
 
         for i, candidate in enumerate(candidates[:25], start=1):
             button = discord.ui.Button(
@@ -149,6 +172,17 @@ class ElectionVotingView(discord.ui.View):
                 raise NotFoundError("Election not found.")
             if voting.get("status") != VotingStatus.VOTING.value:
                 raise InvalidInputError("Voting is not open for this election.")
+
+            if (voting.get("type") == VotingType.CHANCELLOR_ELECTION.value) or (
+                self.voting_type == VotingType.CHANCELLOR_ELECTION
+            ):
+                councillor = await self.db_helper.get_councillor(interaction.user.id, interaction.guild.id)
+                if not councillor or not councillor.get("active", False):
+                    await interaction.response.send_message(
+                        create_error_message("Only active councillors can vote in chancellor elections."),
+                        ephemeral=True,
+                    )
+                    return
 
             voters = await self.db_helper.get_registered_voters(self.voting_id)
             voter = next((v for v in voters if v["discord_id"] == str(interaction.user.id)), None)
@@ -541,39 +575,151 @@ class Elections(commands.Cog):
         description="[Councillor] Announce a chancellor election",
     )
     @app_commands.describe(
+        registration_end="Registration end date (format: DD.MM.YYYY HH:MM)",
         voting_end="Voting end date (format: DD.MM.YYYY HH:MM)",
         channel="Channel to post election message (optional)",
     )
     async def announce_chancellor_election(
         self,
         interaction: discord.Interaction,
+        registration_end: str,
         voting_end: str,
         channel: Optional[discord.TextChannel] = None,
     ):
-        """Announce and open a chancellor election"""
+        """Announce chancellor election (registration phase)"""
         try:
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True, thinking=True)
 
             await check_councillor(interaction.user, interaction.guild, self.db_helper)
 
+            reg_end_dt = convert_datetime_from_str(registration_end)
             vote_end_dt = convert_datetime_from_str(voting_end)
-            if not vote_end_dt:
+            if not reg_end_dt or not vote_end_dt:
                 raise InvalidInputError("Invalid date format. Use: DD.MM.YYYY HH:MM")
-            if vote_end_dt <= datetime_now():
-                raise InvalidInputError("Voting end must be in the future.")
+            if vote_end_dt <= reg_end_dt:
+                raise InvalidInputError("Voting end must be after registration end.")
 
-            existing = await self._find_voting(
+            existing_pending = await self._find_voting(
+                interaction.guild.id,
+                VotingType.CHANCELLOR_ELECTION,
+                VotingStatus.PENDING,
+            )
+            existing_voting = await self._find_voting(
                 interaction.guild.id,
                 VotingType.CHANCELLOR_ELECTION,
                 VotingStatus.VOTING,
             )
-            if existing:
+            if existing_pending or existing_voting:
                 raise AlreadyExistsError("A chancellor election is already in progress!")
 
             councillors = await self.db_helper.list_councillors(interaction.guild.id, active_only=True)
             if not councillors:
                 raise InvalidInputError("No active councillors available for chancellor election.")
+
+            if not channel:
+                guild_data = await self.db_helper.get_guild(interaction.guild.id)
+                channel_id = guild_data.get("announcement_channel_id") or guild_data.get("voting_channel_id")
+                if channel_id:
+                    channel = interaction.guild.get_channel(int(channel_id))
+            if not channel:
+                raise NotFoundError("No channel configured or specified.")
+
+            embed = create_embed(
+                title="👑 Chancellor Election Announced",
+                description=(
+                    f"Only active councillors may register and vote.\n\n"
+                    f"Registration closes {format_timestamp(reg_end_dt, 'R')}\n"
+                    f"Voting closes {format_timestamp(vote_end_dt, 'R')}\n\n"
+                    f"Use the buttons below to register as voter or candidate."
+                ),
+                color=0xFFD700,
+                timestamp=datetime_now(),
+            )
+            embed.set_footer(text="Chancellor Election")
+
+            pre_view = ElectionRegistrationView(
+                self.bot,
+                self.db_helper,
+                "pending",
+                voting_type=VotingType.CHANCELLOR_ELECTION,
+            )
+            guild_data = await self.db_helper.get_guild(interaction.guild.id)
+            content = (
+                f"<@&{guild_data['councillor_role_id']}>"
+                if guild_data.get("councillor_role_id")
+                else None
+            )
+            message = await channel.send(content=content, embed=embed, view=pre_view)
+
+            voting = await self.db_helper.create_voting(
+                voting_type=VotingType.CHANCELLOR_ELECTION,
+                title="Chancellor Election",
+                description="Election for Chancellor of the Grand Council",
+                guild_id=interaction.guild.id,
+                voting_start=reg_end_dt,
+                voting_end=vote_end_dt,
+                status=VotingStatus.PENDING,
+                message_id=str(message.id),
+                required_percentage=0.0,
+            )
+
+            await message.edit(
+                view=ElectionRegistrationView(
+                    self.bot,
+                    self.db_helper,
+                    voting["$id"],
+                    voting_type=VotingType.CHANCELLOR_ELECTION,
+                )
+            )
+
+            await self.db_helper.log(
+                guild_id=interaction.guild.id,
+                log_type=LogType.ELECTION,
+                action="announce_chancellor_election",
+                discord_id=interaction.user.id,
+                details={"voting_id": voting["$id"]},
+            )
+
+            await interaction.followup.send(
+                create_success_message(
+                    f"Chancellor election announced in {channel.mention}. "
+                    f"Start voting later with `/start_chancellor_voting`."
+                ),
+                ephemeral=True,
+            )
+        except Exception as e:
+            await handle_interaction_error(interaction, e)
+
+    @app_commands.command(
+        name="start_chancellor_voting",
+        description="[Councillor] Start voting for pending chancellor election",
+    )
+    @app_commands.describe(channel="Channel to post the voting ballot (optional)")
+    async def start_chancellor_voting(
+        self,
+        interaction: discord.Interaction,
+        channel: Optional[discord.TextChannel] = None,
+    ):
+        """Start chancellor election voting phase"""
+        try:
+            await check_councillor(interaction.user, interaction.guild, self.db_helper)
+
+            voting = await self._find_voting(
+                interaction.guild.id,
+                VotingType.CHANCELLOR_ELECTION,
+                VotingStatus.PENDING,
+            )
+            if not voting:
+                raise NotFoundError("No pending chancellor election found.")
+
+            candidates = await self.db_helper.get_candidates(voting["$id"])
+            if not candidates:
+                raise InvalidInputError("No candidates have registered yet.")
+
+            voters = await self.db_helper.get_registered_voters(voting["$id"])
+            if not voters:
+                raise InvalidInputError("No voters have registered yet.")
 
             if not channel:
                 guild_data = await self.db_helper.get_guild(interaction.guild.id)
@@ -583,40 +729,18 @@ class Elections(commands.Cog):
             if not channel:
                 raise NotFoundError("No voting channel configured or specified.")
 
-            voting = await self.db_helper.create_voting(
-                voting_type=VotingType.CHANCELLOR_ELECTION,
-                title="Chancellor Election",
-                description="Election for Chancellor of the Grand Council",
-                guild_id=interaction.guild.id,
-                voting_end=vote_end_dt,
-                status=VotingStatus.VOTING,
-                required_percentage=0.0,
-            )
-
-            for councillor in councillors:
-                await self.db_helper.register_candidate(
-                    voting_id=voting["$id"],
-                    discord_id=councillor["discord_id"],
-                    name=councillor["name"],
-                )
-                await self.db_helper.register_voter(
-                    voting_id=voting["$id"],
-                    discord_id=councillor["discord_id"],
-                    name=councillor["name"],
-                )
-
-            candidates = await self.db_helper.get_candidates(voting["$id"])
             candidates_text = "\n".join(
                 f"{generate_keycap_emoji(i)} {candidate['name']}"
                 for i, candidate in enumerate(candidates[:25], start=1)
             )
+            voting_end = datetime.fromisoformat(voting["voting_end"].replace("Z", "+00:00"))
 
             embed = create_embed(
-                title="Chancellor Election - Voting Open",
+                title="👑 Chancellor Election - Voting Open",
                 description=(
-                    f"Only active councillors can vote.\n\n"
+                    f"Only registered councillors may vote.\n\n"
                     f"Candidates:\n{candidates_text}\n\n"
-                    f"Voting closes {format_timestamp(vote_end_dt, 'R')}"
+                    f"Voting closes {format_timestamp(voting_end, 'R')}"
                 ),
                 color=0xFFD700,
                 timestamp=datetime_now(),
@@ -632,24 +756,30 @@ class Elections(commands.Cog):
             message = await channel.send(
                 content=content,
                 embed=embed,
-                view=ElectionVotingView(self.bot, self.db_helper, voting["$id"], candidates),
+                view=ElectionVotingView(
+                    self.bot,
+                    self.db_helper,
+                    voting["$id"],
+                    candidates,
+                    voting_type=VotingType.CHANCELLOR_ELECTION,
+                ),
             )
 
-            await self.db_helper.update_voting(voting["$id"], {"message_id": str(message.id)})
+            await self.db_helper.update_voting(
+                voting["$id"],
+                {"status": VotingStatus.VOTING.value, "message_id": str(message.id)},
+            )
 
             await self.db_helper.log(
                 guild_id=interaction.guild.id,
                 log_type=LogType.ELECTION,
-                action="announce_chancellor_election",
+                action="start_chancellor_voting",
                 discord_id=interaction.user.id,
-                details={"voting_id": voting["$id"], "candidates": len(candidates)},
+                details={"voting_id": voting["$id"], "candidates": len(candidates), "voters": len(voters)},
             )
 
-            await interaction.followup.send(
-                create_success_message(
-                    f"Chancellor election started in {channel.mention}! "
-                    f"Voting closes {format_timestamp(vote_end_dt, 'R')}"
-                ),
+            await interaction.response.send_message(
+                create_success_message(f"Chancellor voting has started in {channel.mention}!"),
                 ephemeral=True,
             )
         except Exception as e:

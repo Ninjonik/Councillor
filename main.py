@@ -2,18 +2,20 @@
 Councillor Discord Bot - Main Entry Point
 A Discord bot for managing democratic processes in Discord communities
 """
+import json
 import discord
 from discord.ext import tasks, commands
 import asyncio
 import platform
 from colorama import Fore
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import config
+from cogs.elections import ElectionRegistrationView, ElectionVotingView
 from utils.database import DatabaseHelper, row_to_doc, wrap_list_rows
 from utils.helpers import datetime_now, seconds_until
-from utils.enums import VotingStatus, VotingType, VOTING_TYPE_CONFIG
-from utils.formatting import format_voting_result, create_embed
+from utils.enums import VotingStatus, VotingType, VOTING_TYPE_CONFIG, SettingType, EditableBy
+from utils.formatting import format_voting_result, create_embed, format_timestamp
 from utils.errors import handle_command_error
 from appwrite.client import Client as AppwriteClient
 from appwrite.services.tables_db import TablesDB
@@ -57,23 +59,330 @@ def log(message: str, level: str = "INFO"):
     print(f"{Fore.GREEN}{timestamp}{Fore.RESET} {color}[{level}]{Fore.RESET} {message}")
 
 
-# ============================================
-# Background Tasks
-# ============================================
+AUTOMATION_SCHEDULE_KEYS = {
+    VotingType.ELECTION: "auto_council_election_schedule",
+    VotingType.CHANCELLOR_ELECTION: "auto_chancellor_election_schedule",
+}
+
+
+async def _find_voting(guild_id: int, voting_type: VotingType, status: VotingStatus) -> dict | None:
+    council_id = f"{guild_id}_c"
+    result = tables_db.list_rows(
+        database_id=config.APPWRITE_DB_NAME,
+        table_id="votings",
+        queries=[
+            Query.equal("council_id", council_id),
+            Query.equal("type", voting_type.value),
+            Query.equal("status", status.value),
+            Query.limit(1),
+        ],
+    )
+    rows = result.rows or []
+    if not rows:
+        return None
+    return {"$id": rows[0].id, **rows[0].data}
+
+
+async def _latest_voting_end(guild_id: int, voting_type: VotingType) -> datetime | None:
+    council_id = f"{guild_id}_c"
+    result = tables_db.list_rows(
+        database_id=config.APPWRITE_DB_NAME,
+        table_id="votings",
+        queries=[
+            Query.equal("council_id", council_id),
+            Query.equal("type", voting_type.value),
+            Query.order_desc("voting_end"),
+            Query.limit(1),
+        ],
+    )
+    rows = result.rows or []
+    if not rows:
+        return None
+    end_raw = rows[0].data.get("voting_end")
+    if not end_raw:
+        return None
+    try:
+        return datetime.fromisoformat(end_raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+async def _get_schedule(guild_id: int, key: str) -> dict | None:
+    setting = await db_helper.get_setting(key, guild_id)
+    if not setting:
+        return None
+    try:
+        value = json.loads(setting.get("value", "{}"))
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+async def _set_schedule(guild_id: int, key: str, data: dict) -> None:
+    await db_helper.set_setting(
+        key=key,
+        value=json.dumps(data),
+        guild_id=guild_id,
+        setting_type=SettingType.JSON,
+        description="Internal election automation schedule",
+        editable_by=EditableBy.ADMIN,
+    )
+
+
+async def _clear_schedule(guild_id: int, key: str) -> None:
+    await _set_schedule(guild_id, key, {})
+
+
+async def _send_president_notice(guild: discord.Guild, guild_data: dict, voting_type: VotingType, run_date: datetime) -> None:
+    role_id = guild_data.get("president_role_id")
+    if not role_id:
+        return
+
+    role = guild.get_role(int(role_id))
+    if not role:
+        return
+
+    if voting_type == VotingType.ELECTION:
+        title = "Council election automation notice"
+        details = (
+            f"A council election in **{guild.name}** is scheduled for **{run_date.date().isoformat()} (UTC)**.\n\n"
+            "If you want to override channel, @everyone ping, or start/end time, run `/announce_election` before then."
+        )
+    else:
+        title = "Chancellor election automation notice"
+        details = (
+            f"A chancellor election in **{guild.name}** is scheduled for **{run_date.date().isoformat()} (UTC)**.\n\n"
+            "If you want to override channel/time, have a councillor run `/announce_chancellor_election` before then."
+        )
+
+    for member in role.members:
+        if member.bot:
+            continue
+        try:
+            await member.send(f"**{title}**\n\n{details}")
+        except discord.HTTPException:
+            continue
+
+
+async def _auto_announce_election(guild: discord.Guild, guild_data: dict, voting_type: VotingType) -> bool:
+    channel_id = guild_data.get("announcement_channel_id") or guild_data.get("voting_channel_id")
+    if not channel_id:
+        return False
+
+    channel = guild.get_channel(int(channel_id))
+    if not isinstance(channel, discord.TextChannel):
+        return False
+
+    start_dt = datetime_now() + timedelta(days=1)
+    end_dt = start_dt + timedelta(days=1)
+
+    if voting_type == VotingType.ELECTION:
+        embed = create_embed(
+            title="🗳️ Council Election Announced!",
+            description=(
+                f"Registration is now open.\n\n"
+                f"Voting begins {format_timestamp(start_dt, 'R')}\n"
+                f"Voting ends {format_timestamp(end_dt, 'R')}\n\n"
+                "Use the buttons below to register as voter or candidate."
+            ),
+            color=0x00B0F4,
+            timestamp=datetime_now(),
+        )
+        content = None
+    else:
+        councillors = await db_helper.list_councillors(guild.id, active_only=True)
+        if not councillors:
+            return False
+
+        embed = create_embed(
+            title="👑 Chancellor Election Announced",
+            description=(
+                "Only active councillors may register and vote.\n\n"
+                f"Registration closes {format_timestamp(start_dt, 'R')}\n"
+                f"Voting closes {format_timestamp(end_dt, 'R')}"
+            ),
+            color=0xFFD700,
+            timestamp=datetime_now(),
+        )
+        content = f"<@&{guild_data['councillor_role_id']}>" if guild_data.get("councillor_role_id") else None
+
+    pre_view = ElectionRegistrationView(
+        client,
+        db_helper,
+        "pending",
+        voting_type=voting_type,
+    )
+    message = await channel.send(content=content, embed=embed, view=pre_view)
+
+    title = "Council Election" if voting_type == VotingType.ELECTION else "Chancellor Election"
+    description = "Election for new Grand Council members" if voting_type == VotingType.ELECTION else "Election for Chancellor"
+
+    voting = await db_helper.create_voting(
+        voting_type=voting_type,
+        title=title,
+        description=description,
+        guild_id=guild.id,
+        voting_start=start_dt,
+        voting_end=end_dt,
+        status=VotingStatus.PENDING,
+        message_id=str(message.id),
+        required_percentage=0.0,
+    )
+
+    if voting_type == VotingType.ELECTION:
+        await db_helper.update_council(guild.id, {"election_in_progress": True})
+
+    await message.edit(
+        view=ElectionRegistrationView(
+            client,
+            db_helper,
+            voting["$id"],
+            voting_type=voting_type,
+        )
+    )
+    return True
+
+
+async def _auto_start_pending_election(voting: dict, guild: discord.Guild, guild_data: dict) -> bool:
+    candidates = await db_helper.get_candidates(voting["$id"])
+    voters = await db_helper.get_registered_voters(voting["$id"])
+    if not candidates or not voters:
+        await db_helper.update_voting(
+            voting["$id"],
+            {"status": VotingStatus.FAILED.value, "result_announced": True},
+        )
+        if voting.get("type") == VotingType.ELECTION.value:
+            await db_helper.update_council(guild.id, {"election_in_progress": False})
+        return False
+
+    channel_id = guild_data.get("voting_channel_id") or guild_data.get("announcement_channel_id")
+    if not channel_id:
+        return False
+
+    channel = guild.get_channel(int(channel_id))
+    if not channel:
+        return False
+
+    candidates_text = "\n".join(
+        f"{i}. {candidate['name']}"
+        for i, candidate in enumerate(candidates[:25], start=1)
+    )
+
+    voting_end = datetime.fromisoformat(voting["voting_end"].replace("Z", "+00:00"))
+    if voting.get("type") == VotingType.CHANCELLOR_ELECTION.value:
+        title = "👑 Chancellor Election - Voting Open"
+        color = 0xFFD700
+        content = f"<@&{guild_data['councillor_role_id']}>" if guild_data.get("councillor_role_id") else None
+        description = (
+            f"Only registered councillors may vote.\n\n"
+            f"Candidates:\n{candidates_text}\n\n"
+            f"Voting closes {format_timestamp(voting_end, 'R')}"
+        )
+        voting_type = VotingType.CHANCELLOR_ELECTION
+    else:
+        title = "Council Election - Voting Open"
+        color = 0x00FF00
+        content = f"<@&{guild_data['citizen_role_id']}>" if guild_data.get("citizen_role_id") else None
+        description = (
+            f"Vote by clicking a candidate button below.\n\n"
+            f"Candidates:\n{candidates_text}\n\n"
+            f"Voting closes {format_timestamp(voting_end, 'R')}"
+        )
+        voting_type = VotingType.ELECTION
+
+    embed = create_embed(
+        title=title,
+        description=description,
+        color=color,
+        timestamp=datetime_now(),
+    )
+
+    ballot_message = await channel.send(
+        content=content,
+        embed=embed,
+        view=ElectionVotingView(client, db_helper, voting["$id"], candidates, voting_type=voting_type),
+    )
+
+    await db_helper.update_voting(
+        voting["$id"],
+        {"status": VotingStatus.VOTING.value, "message_id": str(ballot_message.id)},
+    )
+    return True
+
 
 @tasks.loop(hours=24)
-async def update_votings():
-    """Check and update voting statuses daily"""
+async def election_scheduler_loop():
+    """Queue and execute election/chancellor election notices + auto announcements."""
+    now = datetime_now()
+    tomorrow = now + timedelta(days=1)
+
+    for guild in client.guilds:
+        guild_data = await db_helper.get_guild(guild.id)
+        if not guild_data or not guild_data.get("enabled", True):
+            continue
+
+        max_councillors = int(guild_data.get("max_councillors", 9))
+        active_councillors = await db_helper.list_councillors(guild.id, active_only=True)
+        is_full_council = len(active_councillors) >= max_councillors
+
+        for voting_type in [VotingType.ELECTION, VotingType.CHANCELLOR_ELECTION]:
+            pending = await _find_voting(guild.id, voting_type, VotingStatus.PENDING)
+            active = await _find_voting(guild.id, voting_type, VotingStatus.VOTING)
+            if pending or active:
+                continue
+
+            schedule_key = AUTOMATION_SCHEDULE_KEYS[voting_type]
+            schedule = await _get_schedule(guild.id, schedule_key)
+
+            if not schedule or not schedule.get("run_date"):
+                last_end = await _latest_voting_end(guild.id, voting_type)
+                older_than_month = (last_end is None) or ((now - last_end) > timedelta(days=30))
+
+                should_schedule = (
+                    (is_full_council and tomorrow.day == 1)
+                    or ((not is_full_council) and older_than_month)
+                )
+                if should_schedule:
+                    schedule = {
+                        "notice_date": now.date().isoformat(),
+                        "run_date": tomorrow.date().isoformat(),
+                        "notice_sent": False,
+                    }
+                    await _set_schedule(guild.id, schedule_key, schedule)
+
+            if not schedule or not schedule.get("run_date"):
+                continue
+
+            run_date = datetime.fromisoformat(schedule["run_date"])
+            notice_date = datetime.fromisoformat(schedule["notice_date"])
+
+            if not schedule.get("notice_sent") and now.date() >= notice_date.date():
+                await _send_president_notice(guild, guild_data, voting_type, run_date)
+                schedule["notice_sent"] = True
+                await _set_schedule(guild.id, schedule_key, schedule)
+
+            if now.date() >= run_date.date():
+                announced = await _auto_announce_election(guild, guild_data, voting_type)
+                if announced:
+                    log(f"Auto-announced {voting_type.value} for guild {guild.id}", "INFO")
+                await _clear_schedule(guild.id, schedule_key)
+
+
+@election_scheduler_loop.before_loop
+async def _before_election_scheduler_loop():
+    await client.wait_until_ready()
     if not config.DEBUG_MODE:
-        wait = seconds_until(0, 5)  # Run at 00:05 UTC
-        log(f"Next voting update in {wait:.0f} seconds", "INFO")
+        wait = seconds_until(0, 1)  # First run shortly after midnight UTC.
         await asyncio.sleep(wait)
 
+
+@tasks.loop(minutes=30)
+async def update_votings():
+    """Check and update voting statuses."""
     log("Running voting update task...", "INFO")
     current_datetime = datetime_now()
 
     try:
-        # Activate scheduled elections/proposals that were pending until voting_start
         pending_result = tables_db.list_rows(
             database_id=config.APPWRITE_DB_NAME,
             table_id="votings",
@@ -88,15 +397,26 @@ async def update_votings():
                 start_dt = datetime.fromisoformat(vs.replace("Z", "+00:00"))
             except ValueError:
                 continue
-            if start_dt <= current_datetime or config.DEBUG_MODE:
-                await db_helper.update_voting(
-                    doc["$id"],
-                    {"status": VotingStatus.VOTING.value},
-                )
+
+            if not (start_dt <= current_datetime or config.DEBUG_MODE):
+                continue
+
+            guild_id = doc["council_id"].replace("_c", "")
+            guild = client.get_guild(int(guild_id))
+            if not guild:
+                continue
+            guild_data = await db_helper.get_guild(guild.id)
+            if not guild_data:
+                continue
+
+            if doc.get("type") in [VotingType.ELECTION.value, VotingType.CHANCELLOR_ELECTION.value]:
+                started = await _auto_start_pending_election(doc, guild, guild_data)
+                if started:
+                    log(f"Activated election voting {doc['$id']} (pending → voting)", "INFO")
+            else:
+                await db_helper.update_voting(doc["$id"], {"status": VotingStatus.VOTING.value})
                 log(f"Activated voting {doc['$id']} (pending → voting)", "INFO")
 
-        # Get all votings that should be finalized.
-        # In debug mode, treat every active voting as ended.
         ended_queries = [Query.equal("status", VotingStatus.VOTING.value)]
         if not config.DEBUG_MODE:
             ended_queries.append(Query.less_than_equal("voting_end", current_datetime.isoformat()))
@@ -433,6 +753,10 @@ class CouncillorBot(commands.Bot):
         if not update_votings.is_running():
             update_votings.start()
             log("Started voting update task", "SUCCESS")
+
+        if not election_scheduler_loop.is_running():
+            election_scheduler_loop.start()
+            log("Started election scheduler task", "SUCCESS")
 
         if not expire_decrees_loop.is_running():
             expire_decrees_loop.start()

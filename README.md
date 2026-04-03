@@ -201,10 +201,16 @@ The bot supports the following democratic roles:
 
 ### Elections
 
-1. **Announcement Phase** - President announces election, citizens register
-2. **Voting Phase** - Registered voters vote for candidates
-3. **Results** - Top candidates become councillors
-4. **Chancellor Election** - Councillors elect a Chancellor
+1. **Pre-Notice (Automatic)** - One day before a scheduled election, the President gets a DM notice.
+2. **Announcement (Automatic unless overridden)** - If no manual override is made, the bot announces the election automatically.
+3. **Voting Start (Automatic unless overridden)** - Pending elections move to voting automatically at `voting_start`.
+4. **Voting End (Automatic)** - Elections are finalized automatically once `voting_end` is reached.
+5. **Manual Overrides Stay Available** - `/announce_election`, `/start_voting`, `/close_election`, and chancellor equivalents still work.
+
+Election scheduling rules now follow the constitution request:
+- If the council is full, scheduling targets the first day of the month (with notice the day before).
+- If seats are missing and the last election was over 30 days ago, scheduling starts immediately (notice today, election tomorrow).
+- The same automation rules are applied to chancellor elections.
 
 ## 🔒 Security & Permissions
 

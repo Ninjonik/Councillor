@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional, cast
 import html
+import re
 
 import markdown as md
 from aiohttp import web
@@ -30,23 +31,62 @@ def _render_breadcrumbs(breadcrumbs: list[tuple[str, Optional[str]]]) -> str:
     return "".join(parts)
 
 
+def _markdown_to_plain_text(markdown_text: str, max_length: int = 280) -> str:
+    rendered = md.markdown(
+        markdown_text,
+        extensions=["extra", "tables", "fenced_code", "nl2br"],
+    )
+    # Collapse rendered HTML to readable plain text for metadata fields.
+    text = re.sub(r"<[^>]+>", " ", rendered)
+    text = html.unescape(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return "Councillor public page"
+    if len(text) <= max_length:
+        return text
+    return text[: max_length - 3].rstrip() + "..."
+
+
+def _build_public_url(request: Optional[web.Request]) -> Optional[str]:
+    if not request:
+        return None
+
+    configured_base = getattr(config, "WEB_PUBLIC_BASE_URL", None)
+    if configured_base:
+        return configured_base.rstrip("/") + request.rel_url.path
+    return str(request.url)
+
+
 def _render_html_page(
     title: str,
     markdown_text: str,
     breadcrumbs: Optional[list[tuple[str, Optional[str]]]] = None,
+    page_url: Optional[str] = None,
 ) -> str:
     body_html = md.markdown(
         markdown_text,
         extensions=["extra", "tables", "fenced_code", "nl2br"],
     )
     safe_title = html.escape(title)
+    description = _markdown_to_plain_text(markdown_text)
+    safe_description = html.escape(description)
+    safe_url = html.escape(page_url) if page_url else ""
     crumbs = _render_breadcrumbs(breadcrumbs or [("Home", "/"), (title, None)])
+    og_url_meta = f'  <meta property="og:url" content="{safe_url}" />\n' if safe_url else ""
     return f"""<!doctype html>
 <html lang=\"en\">
 <head>
   <meta charset=\"utf-8\" />
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
   <title>{safe_title}</title>
+  <meta name="description" content="{safe_description}" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="{safe_title}" />
+  <meta property="og:description" content="{safe_description}" />
+{og_url_meta}  <meta property="og:site_name" content="Councillor" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="{safe_title}" />
+  <meta name="twitter:description" content="{safe_description}" />
   <style>
     :root {{
       --bg: #f7f8fb;
@@ -114,9 +154,15 @@ def _md_response(
     text: str,
     title: str = "Councillor Public Pages",
     breadcrumbs: Optional[list[tuple[str, Optional[str]]]] = None,
+    request: Optional[web.Request] = None,
 ) -> web.Response:
     return web.Response(
-        text=_render_html_page(title, text, breadcrumbs=breadcrumbs),
+        text=_render_html_page(
+            title,
+            text,
+            breadcrumbs=breadcrumbs,
+            page_url=_build_public_url(request),
+        ),
         content_type="text/html",
     )
 
@@ -178,6 +224,7 @@ class WebServer(commands.Cog):
             "\n".join(lines) + "\n",
             title="Councillor Public Pages",
             breadcrumbs=[("Home", None)],
+            request=request,
         )
 
     async def guild_home(self, request: web.Request) -> web.Response:
@@ -195,6 +242,7 @@ class WebServer(commands.Cog):
             text,
             title=f"Guild {guild_id} • Navigation",
             breadcrumbs=[("Home", "/"), (f"Guild {guild_id}", None)],
+            request=request,
         )
 
     async def constitution(self, request: web.Request) -> web.Response:
@@ -207,14 +255,16 @@ class WebServer(commands.Cog):
                 title + "## Constitution\n\n_Not configured yet._\n",
                 title="Constitution",
                 breadcrumbs=crumbs,
+                request=request,
             )
         return _md_response(
             title + setting.get("value", "_Empty constitution._") + "\n",
             title="Constitution",
             breadcrumbs=crumbs,
+            request=request,
         )
 
-    async def _laws_page(self, guild_id: int, status: VotingStatus) -> web.Response:
+    async def _laws_page(self, request: web.Request, guild_id: int, status: VotingStatus) -> web.Response:
         laws = await self.db_helper.list_laws(guild_id, statuses=[status], limit=100)
         laws.sort(key=lambda law: law.get("voting_end", ""), reverse=True)
 
@@ -224,7 +274,7 @@ class WebServer(commands.Cog):
         crumbs = [("Home", "/"), (f"Guild {guild_id}", f"/g/{guild_id}"), (title, None)]
         if not laws:
             lines.append("_No entries found._")
-            return _md_response("\n".join(lines) + "\n", title=title, breadcrumbs=crumbs)
+            return _md_response("\n".join(lines) + "\n", title=title, breadcrumbs=crumbs, request=request)
 
         for law in laws:
             votes = await self.db_helper.get_votes_for_voting(law["$id"])
@@ -232,15 +282,15 @@ class WebServer(commands.Cog):
             no_votes = len(votes) - yes_votes
             lines.append(f"- **{law.get('title', 'Untitled')}** — yes: {yes_votes}, no: {no_votes} ([details](/g/{guild_id}/laws/{law['$id']}.md))")
 
-        return _md_response("\n".join(lines) + "\n", title=title, breadcrumbs=crumbs)
+        return _md_response("\n".join(lines) + "\n", title=title, breadcrumbs=crumbs, request=request)
 
     async def laws_passed(self, request: web.Request) -> web.Response:
         guild_id = int(request.match_info["guild_id"])
-        return await self._laws_page(guild_id, VotingStatus.PASSED)
+        return await self._laws_page(request, guild_id, VotingStatus.PASSED)
 
     async def laws_failed(self, request: web.Request) -> web.Response:
         guild_id = int(request.match_info["guild_id"])
-        return await self._laws_page(guild_id, VotingStatus.FAILED)
+        return await self._laws_page(request, guild_id, VotingStatus.FAILED)
 
     async def law_details(self, request: web.Request) -> web.Response:
         guild_id = int(request.match_info["guild_id"])
@@ -278,9 +328,9 @@ class WebServer(commands.Cog):
             ("Laws", f"/g/{guild_id}/laws/passed.md"),
             (detail_title, None),
         ]
-        return _md_response(text, title=detail_title, breadcrumbs=crumbs)
+        return _md_response(text, title=detail_title, breadcrumbs=crumbs, request=request)
 
-    async def _decrees_page(self, guild_id: int, active_only: bool) -> web.Response:
+    async def _decrees_page(self, request: web.Request, guild_id: int, active_only: bool) -> web.Response:
         await self.db_helper.expire_decrees(guild_id)
         decrees = await self.db_helper.list_decrees(guild_id, active_only=active_only, limit=100)
         decrees.sort(key=lambda decree: decree.get("issued_at", ""), reverse=True)
@@ -290,22 +340,22 @@ class WebServer(commands.Cog):
         crumbs = [("Home", "/"), (f"Guild {guild_id}", f"/g/{guild_id}"), (title, None)]
         if not decrees:
             lines.append("_No entries found._")
-            return _md_response("\n".join(lines) + "\n", title=title, breadcrumbs=crumbs)
+            return _md_response("\n".join(lines) + "\n", title=title, breadcrumbs=crumbs, request=request)
 
         for decree in decrees:
             lines.append(
                 f"- **{decree.get('title', 'Untitled')}** ([details](/g/{guild_id}/decrees/{decree['$id']}.md))"
             )
 
-        return _md_response("\n".join(lines) + "\n", title=title, breadcrumbs=crumbs)
+        return _md_response("\n".join(lines) + "\n", title=title, breadcrumbs=crumbs, request=request)
 
     async def decrees_active(self, request: web.Request) -> web.Response:
         guild_id = int(request.match_info["guild_id"])
-        return await self._decrees_page(guild_id, True)
+        return await self._decrees_page(request, guild_id, True)
 
     async def decrees_history(self, request: web.Request) -> web.Response:
         guild_id = int(request.match_info["guild_id"])
-        return await self._decrees_page(guild_id, False)
+        return await self._decrees_page(request, guild_id, False)
 
     async def decree_details(self, request: web.Request) -> web.Response:
         guild_id = int(request.match_info["guild_id"])
@@ -333,7 +383,7 @@ class WebServer(commands.Cog):
             ("Decrees", f"/g/{guild_id}/decrees/active.md"),
             (detail_title, None),
         ]
-        return _md_response(text, title=detail_title, breadcrumbs=crumbs)
+        return _md_response(text, title=detail_title, breadcrumbs=crumbs, request=request)
 
 
 async def setup(bot: commands.Bot) -> None:

@@ -81,7 +81,7 @@ class ElectionRegistrationView(discord.ui.View):
         except Exception as e:
             await handle_interaction_error(interaction, e)
 
-    @discord.ui.button(label="Run for Councillor", style=discord.ButtonStyle.blurple, emoji="🏛️")
+    @discord.ui.button(label="Run for Office", style=discord.ButtonStyle.blurple, emoji="🏛️")
     async def register_candidate(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Register as a candidate"""
         try:

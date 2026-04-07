@@ -291,9 +291,6 @@ class Elections(commands.Cog):
 
         elected: list[dict] = []
         for candidate in candidates[:max_councillors]:
-            if int(candidate.get("vote_count", 0)) <= 0:
-                continue
-
             existing = await self.db_helper.get_councillor(candidate["discord_id"], guild.id)
             if existing:
                 await self.db_helper.update_councillor(

@@ -1,3 +1,4 @@
+# DISCONTINUED
 # Councillor Discord Bot
 
 A comprehensive Discord bot for managing democratic processes in Discord communities. Built with discord.py 2.6.4 and Appwrite 1.7.4.
